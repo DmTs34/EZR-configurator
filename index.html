@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EZR Cabinet Configurator</title>
+  <link rel="stylesheet" href="css/cabinet/base.css">
+  <link rel="stylesheet" href="css/cabinet/layout.css">
+  <link rel="stylesheet" href="css/cabinet/components.css">
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════
+     HEADER
+════════════════════════════════════════════════════ -->
+<header class="app-header">
+  <div class="logo">
+    <span class="logo-text">EZR Configurator</span>
+    <span class="version-tag">Cabinet v1.0</span>
+  </div>
+  <div class="header-spacer"></div>
+  <input type="text" class="project-name-input" id="projectName"
+         placeholder="Project name…" value="New Project">
+  <button class="bom-btn" onclick="activateStep('step4');toggleStep('step4')">
+    <span>BOM</span>
+    <span class="bom-count" id="bomCount">0</span>
+  </button>
+</header>
+
+<!-- ════════════════════════════════════════════════════
+     MAIN LAYOUT  (sidebar left, viewport right)
+════════════════════════════════════════════════════ -->
+<div class="app-layout">
+
+  <!-- ── SIDEBAR ──────────────────────────────────── -->
+  <aside class="sidebar">
+
+    <!-- ══════════════════════════════════════════════
+         STEP 1 — CABINET
+    ══════════════════════════════════════════════ -->
+    <div class="step" id="step1">
+      <div class="step-header" onclick="toggleStep('step1')">
+        <div class="step-num">1</div>
+        <div class="step-title">Cabinet</div>
+        <div class="step-chevron">▾</div>
+      </div>
+      <div class="step-content">
+
+        <!-- Block 1: Browse Configurations -->
+        <div id="browseBlock" style="margin-bottom:8px">
+          <button class="btn btn-primary btn-block" onclick="togglePresetGallery()">Browse Configurations</button>
+          <div id="presetGallery" class="preset-gallery">
+            <div class="preset-cards-row" id="presetGrid"></div>
+          </div>
+        </div>
+
+        <!-- Block 2: Q&A Wizard -->
+        <div id="wizardBlock" style="margin-bottom:8px">
+          <button class="btn btn-primary btn-block" onclick="openWizard()">Q&amp;A Wizard ›</button>
+        </div>
+
+        <!-- Block 3: Code Editor (always visible) -->
+        <div id="codeBlock">
+          <div class="code-editor">
+            <div class="seg-editor-hint">Click a segment to change its value</div>
+            <div class="code-segments" id="codeSegments"></div>
+            <div class="code-validation">
+              <div class="validation-dot" id="validationDot"></div>
+              <span id="validationMsg">Select all segments to configure</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Current code — editable input -->
+        <div id="currentCodeRow">
+          <div class="form-label" style="margin-bottom:4px">Current Code</div>
+          <input id="currentCodeValue" class="code-input" type="text"
+                 autocomplete="off" spellcheck="false"
+                 placeholder="e.g. EZR_OP-46U-12IFA-D000B0S00T0-A-GY">
+        </div>
+
+        <button class="btn btn-primary btn-block" id="useConfigBtn"
+                onclick="useEZRConfig()" style="margin-top:8px" disabled>
+          Use this EZR configuration →
+        </button>
+
+      </div>
+    </div><!-- /step1 -->
+
+    <!-- ══════════════════════════════════════════════
+         STEP 2 — ACCESSORIES
+    ══════════════════════════════════════════════ -->
+<div class="step collapsed locked" id="step3">
+      <div class="step-header" onclick="toggleStep('step3')">
+        <div class="step-num">2</div>
+        <div class="step-title">Accessories</div>
+        <div class="step-chevron">▾</div>
+      </div>
+      <div class="step-content">
+        <!-- EZR accessory cards -->
+        <div class="preset-cards-row" id="accGrid"></div>
+
+        <div style="padding:12px 0 4px">
+          <button class="btn btn-primary btn-block" id="readyBtn" onclick="onReadyClick()">
+            Ready →
+          </button>
+        </div>
+      </div>
+    </div><!-- /step3 -->
+
+    <!-- ══════════════════════════════════════════════
+         STEP 4 — EXPORT / BOM
+    ══════════════════════════════════════════════ -->
+    <div class="step collapsed locked" id="step4">
+      <div class="step-header" onclick="toggleStep('step4')">
+        <div class="step-num">3</div>
+        <div class="step-title">Export / BOM</div>
+        <div class="step-chevron">▾</div>
+      </div>
+      <div class="step-content">
+        <div class="form-label" style="margin-bottom:6px">Bill of Materials</div>
+        <div class="bom-wrapper">
+          <table class="bom-table">
+            <thead>
+              <tr><th>Item</th><th>Code</th><th style="text-align:right">Qty</th></tr>
+            </thead>
+            <tbody id="bomTableBody">
+              <tr><td colspan="3" class="bom-empty">Configure cabinet first</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <button class="btn btn-secondary btn-block" onclick="saveConfig()">Save Config (JSON)</button>
+        <button class="btn btn-primary btn-block"   onclick="exportBOM()">Export BOM (CSV)</button>
+      </div>
+    </div><!-- /step4 -->
+
+<!-- Render button — always accessible -->
+    <div style="padding:12px 16px;border-top:1px solid var(--color-border);margin-top:auto">
+      <button class="btn btn-secondary btn-block" onclick="renderSnapshot()">&#128247; Render PNG</button>
+    </div>
+
+  </aside><!-- /sidebar -->
+
+  <!-- ── 3D VIEWPORT ──────────────────────────────── -->
+  <div class="viewport">
+    <canvas id="cabinet-canvas"></canvas>
+
+    <div class="viewport-loading" id="viewportLoading">
+      <div class="spinner"></div>
+      <span>Initialising scene…</span>
+    </div>
+
+    <div class="viewport-toolbar">
+      <button class="cam-btn" onclick="CabinetCamera.setView('front')">Front</button>
+      <button class="cam-btn" onclick="CabinetCamera.setView('side')">Side</button>
+      <button class="cam-btn" onclick="CabinetCamera.setView('top')">Top</button>
+      <button class="cam-btn" onclick="CabinetCamera.setView('iso')">Iso</button>
+      <button class="cam-btn cam-btn--ortho" id="orthoBtn" onclick="CabinetCamera.toggleOrtho()">Persp</button>
+    </div>
+
+    <!-- Door controls overlay (top-left) -->
+    <div class="door-controls" id="doorControls" style="display:none">
+      <div class="door-ctrl-row">
+        <span class="door-ctrl-label">Transparency</span>
+        <input type="range" id="doorOpacity" min="0" max="100" value="100"
+               oninput="applyDoorOpacity(this.value)">
+        <span class="door-ctrl-val" id="doorOpacityVal">100%</span>
+      </div>
+      <div class="door-ctrl-row">
+        <span class="door-ctrl-label">Open angle</span>
+        <input type="range" id="doorAngle" min="0" max="87" value="0"
+               oninput="applyDoorAngle(this.value)">
+        <span class="door-ctrl-val" id="doorAngleVal">0°</span>
+      </div>
+    </div>
+
+    <div class="gizmo-hint">DRAG TO ORBIT &middot; SCROLL TO ZOOM</div>
+    <div class="canvas-status" id="canvasStatus"></div>
+
+    <!-- Camera status bar (bottom) -->
+    <div class="camera-statusbar" id="cameraStatusbar"></div>
+
+    <!-- Build status overlay (shown while assembling) -->
+    <div class="build-status" id="buildStatus" style="display:none">
+      <div class="spinner"></div>
+      <span id="buildStatusText"></span>
+    </div>
+
+  </div>
+
+</div><!-- /app-layout -->
+
+<!-- ════════════════════════════════════════════════════
+     WIZARD MODAL  (multi-step)
+════════════════════════════════════════════════════ -->
+<div class="modal" id="wizardModal">
+  <div class="modal-box modal-box-wide">
+
+    <div class="modal-header">
+      <h2 class="modal-title">Cabinet Configuration Wizard</h2>
+      <button class="modal-close" onclick="closeModal('wizardModal')">✕</button>
+    </div>
+
+    <!-- Progress bar -->
+    <div class="wiz-progress-track">
+      <div class="wiz-progress-bar" id="wizProgressBar" style="width:0%"></div>
+    </div>
+    <div class="wiz-progress-label" id="wizProgress">Step 1 of 5</div>
+
+    <!-- ── Step panels ──────────────────────────────── -->
+
+    <!-- Panel 1: PR type -->
+    <div class="wiz-panel" id="wizPanel1">
+      <div class="wiz-question">What type of cabinet do you need?</div>
+      <div class="wiz-pr-grid">
+        <button class="wiz-pr-card" data-wiz-pr="EZR_FR" onclick="wizSelectPR('EZR_FR')">
+          <div class="wiz-pr-icon">⬜</div>
+          <div class="wiz-pr-label">Frame</div>
+          <div class="wiz-pr-code">EZR_FR</div>
+          <div class="wiz-pr-desc">Open frame — no doors, no internal accessories</div>
+        </button>
+        <button class="wiz-pr-card" data-wiz-pr="EZR_OP" onclick="wizSelectPR('EZR_OP')">
+          <div class="wiz-pr-icon">🔲</div>
+          <div class="wiz-pr-label">Open</div>
+          <div class="wiz-pr-code">EZR_OP</div>
+          <div class="wiz-pr-desc">No doors, with predefined internal accessories</div>
+        </button>
+        <button class="wiz-pr-card" data-wiz-pr="EZR_CL" onclick="wizSelectPR('EZR_CL')">
+          <div class="wiz-pr-icon">🔳</div>
+          <div class="wiz-pr-label">Closed</div>
+          <div class="wiz-pr-code">EZR_CL</div>
+          <div class="wiz-pr-desc">Frame or Open with doors, side walls, roof &amp; floor</div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Panel 2: Height -->
+    <div class="wiz-panel" id="wizPanel2" style="display:none">
+      <div class="wiz-question">Select cabinet height</div>
+      <div class="wiz-options-row">
+        <button class="wizard-option" data-wiz-he="18U" onclick="wizSelectHE('18U')">18U</button>
+        <button class="wizard-option" data-wiz-he="22U" onclick="wizSelectHE('22U')">22U</button>
+        <button class="wizard-option" data-wiz-he="38U" onclick="wizSelectHE('38U')">38U</button>
+        <button class="wizard-option" data-wiz-he="42U" onclick="wizSelectHE('42U')">42U</button>
+        <button class="wizard-option" data-wiz-he="46U" onclick="wizSelectHE('46U')">46U</button>
+        <button class="wizard-option" data-wiz-he="50U" onclick="wizSelectHE('50U')">50U</button>
+      </div>
+    </div>
+
+    <!-- Panel 3: Design -->
+    <div class="wiz-panel" id="wizPanel3" style="display:none">
+      <div class="wiz-question">Select a design configuration</div>
+      <div class="wiz-de-grid" id="wizDEOptions">
+        <!-- Filled by JS -->
+      </div>
+    </div>
+
+    <!-- Panel 4: Covering — Doors (EZR_CL only) -->
+    <div class="wiz-panel" id="wizPanel4" style="display:none">
+      <div class="wiz-question">Configure doors</div>
+      <div class="wiz-cov-section" id="wizCovDoors">
+        <!-- Filled by JS -->
+      </div>
+    </div>
+
+    <!-- Panel 5: Covering — Walls & Top (EZR_CL only) -->
+    <div class="wiz-panel" id="wizPanel5" style="display:none">
+      <div class="wiz-question">Configure walls and top & floor</div>
+      <div class="wiz-cov-section" id="wizCovWalls">
+        <!-- Filled by JS -->
+      </div>
+    </div>
+
+    <!-- Panel 6: Assembly -->
+    <div class="wiz-panel" id="wizPanel6" style="display:none">
+      <div class="wiz-question">How should the cabinet be delivered?</div>
+      <div class="wiz-as-grid">
+        <button class="wiz-as-card" data-wiz-as="A" onclick="wizSelectAS('A')">
+          <div class="wiz-as-icon">📦</div>
+          <div class="wiz-as-label">Pre-assembled</div>
+          <div class="wiz-as-code">AS = A</div>
+          <div class="wiz-as-desc">Delivered fully assembled</div>
+        </button>
+        <button class="wiz-as-card" data-wiz-as="B" onclick="wizSelectAS('B')">
+          <div class="wiz-as-icon">🔧</div>
+          <div class="wiz-as-label">Quick-mount</div>
+          <div class="wiz-as-code">AS = B</div>
+          <div class="wiz-as-desc">Partially assembled — fast on-site install</div>
+        </button>
+        <button class="wiz-as-card" data-wiz-as="C" onclick="wizSelectAS('C')">
+          <div class="wiz-as-icon">🗃️</div>
+          <div class="wiz-as-label">Kit</div>
+          <div class="wiz-as-code">AS = C</div>
+          <div class="wiz-as-desc">Fully disassembled — requires tools &amp; fixtures</div>
+        </button>
+        <button class="wiz-as-card" data-wiz-as="E" onclick="wizSelectAS('E')" style="display:none">
+          <div class="wiz-as-icon">📫</div>
+          <div class="wiz-as-label">Two-box</div>
+          <div class="wiz-as-code">AS = E</div>
+          <div class="wiz-as-desc">15DAS only: assembled, delivered in two boxes</div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Panel 7: Colour -->
+    <div class="wiz-panel" id="wizPanel7" style="display:none">
+      <div class="wiz-question">Select covering colour</div>
+      <div class="wiz-cl-grid">
+        <button class="wiz-cl-card" data-wiz-cl="GY" onclick="wizSelectCL('GY')">
+          <div class="cl-swatch" style="background:#9e9e9e"></div>
+          <div class="cl-label">Grey</div>
+          <div class="cl-code">GY</div>
+        </button>
+        <button class="wiz-cl-card" data-wiz-cl="BK" onclick="wizSelectCL('BK')">
+          <div class="cl-swatch" style="background:#212121"></div>
+          <div class="cl-label">Black</div>
+          <div class="cl-code">BK</div>
+        </button>
+        <button class="wiz-cl-card" data-wiz-cl="RD" onclick="wizSelectCL('RD')">
+          <div class="cl-swatch" style="background:#e53935"></div>
+          <div class="cl-label">Red</div>
+          <div class="cl-code">RD</div>
+        </button>
+        <button class="wiz-cl-card" data-wiz-cl="WH" onclick="wizSelectCL('WH')">
+          <div class="cl-swatch" style="background:#f0f0f0; border:1px solid #ccc"></div>
+          <div class="cl-label">White</div>
+          <div class="cl-code">WH</div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Modal footer -->
+    <div class="wiz-footer">
+      <!-- Live code preview -->
+      <div class="wiz-code-preview">
+        <span class="wiz-code-label">Code:</span>
+        <code class="wiz-code-value" id="wizCodePreview">…</code>
+      </div>
+      <div class="wiz-nav">
+        <button class="btn btn-ghost"   id="wizBack" onclick="wizBack()" style="visibility:hidden">← Back</button>
+        <button class="btn btn-primary" id="wizNext" onclick="wizNext()">Next →</button>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /wizardModal -->
+
+<!-- Preview modal -->
+<div class="modal" id="previewModal" onclick="closePreview()">
+  <div class="modal-box modal-box-preview" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h2 class="modal-title" id="previewModalTitle"></h2>
+      <button class="modal-close" onclick="closePreview()">✕</button>
+    </div>
+    <div class="preview-body">
+      <div class="preview-canvas-wrap">
+        <canvas id="previewCanvas"></canvas>
+        <div class="camera-statusbar" id="previewStatusbar"></div>
+      </div>
+      <div id="cablesEditor" class="cables-editor" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<!-- Segment editor popover -->
+<div id="segmentPopover" class="seg-popover"></div>
+
+<!-- ════════════════════════════════════════════════════
+     SCRIPTS
+════════════════════════════════════════════════════ -->
+<script src="libs/three.min.js"></script>
+<script src="libs/GLTFLoader.js"></script>
+<script src="js/cabinet-state.js"></script>
+<script src="js/cabinet-main.js"></script>
+<script src="js/cabinet-builder.js"></script>
+<script src="js/preview-cables.js"></script>
+<script src="js/cabinet-ui.js"></script>
+<script src="js/cabinet-drag.js"></script>
+
+</body>
+</html>

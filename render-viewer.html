@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; }
+    body { background: #ffffff; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <canvas id="c" width="1200" height="900"></canvas>
+
+  <script src="libs/three.min.js"></script>
+  <script src="libs/GLTFLoader.js"></script>
+  <script>
+    window._renderDone = false;
+
+    const params = new URLSearchParams(location.search);
+    const model  = params.get('model'); // e.g. "EZR_C_FRM-46U-NT.glb"
+
+    const canvas   = document.getElementById('c');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+    renderer.setSize(1200, 900, false);
+    renderer.setPixelRatio(1);
+    if (THREE.SRGBColorSpace !== undefined) renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xffffff);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const key = new THREE.DirectionalLight(0xfff4e8, 1.1);
+    key.position.set(4, 6, 4);
+    key.castShadow = true;
+    key.shadow.bias       = -0.001;
+    key.shadow.normalBias = 0.02;
+    scene.add(key);
+    const fill = new THREE.DirectionalLight(0xd0e8ff, 0.45);
+    fill.position.set(-4, 2, -3);
+    scene.add(fill);
+
+    const camera = new THREE.PerspectiveCamera(45, 1200 / 900, 0.001, 500);
+
+    function fitCamera(object) {
+      const box    = new THREE.Box3().setFromObject(object);
+      const center = box.getCenter(new THREE.Vector3());
+      const size   = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const fov    = camera.fov * (Math.PI / 180);
+      const dist   = (maxDim / 2) / Math.tan(fov / 2) * 1.6;
+
+      // Iso angle
+      const theta = Math.PI / 5;
+      const phi   = Math.PI / 3.8;
+      camera.position.set(
+        center.x + dist * Math.sin(phi) * Math.sin(theta),
+        center.y + dist * Math.cos(phi),
+        center.z + dist * Math.sin(phi) * Math.cos(theta)
+      );
+      camera.lookAt(center);
+      camera.updateProjectionMatrix();
+    }
+
+    if (!model) {
+      window._renderDone = true;
+    } else {
+      const loader = new THREE.GLTFLoader();
+      loader.load(
+        'components/' + model,
+        (gltf) => {
+          const root = gltf.scene;
+          root.position.set(0, 0, 0);
+          root.rotation.set(0, 0, 0);
+          root.scale.set(1, 1, 1);
+          scene.add(root);
+          fitCamera(root);
+          renderer.render(scene, camera);
+          window._renderDone = true;
+        },
+        null,
+        (err) => {
+          console.error('Load error', err);
+          window._renderDone = true;
+        }
+      );
+    }
+  </script>
+</body>
+</html>

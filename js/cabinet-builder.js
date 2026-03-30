@@ -107,7 +107,7 @@ window.CabinetBuilder = (function () {
     '15DAS': { left: 600, middle: 300, right: 600 },
   };
 
-  const DOOR_Z_MM = 302;  // forward offset (Z axis) for all doors
+  const DOOR_Z_MM = 300;  // forward offset (Z axis) for all doors
 
   // EZR_OP designs → FR base DE (for plate positions)
   const DE_FR_BASE = {
@@ -544,17 +544,29 @@ window.CabinetBuilder = (function () {
         });
       }
 
+      const hingeGlb    = `${COMP_ROOT}EZR_hinge-${p.he}.glb`;
+      const HINGE_OFF_X = 6.5;   // mm — pivot offset from door origin along X
+      const HINGE_OFF_Z = 39.4;  // mm — pivot offset from door origin along Z
+
       async function _placeDoorLeft(style, size, x) {
         const glb = `LD-${style}-${p.he}-${size}.glb`;
         try {
           const door  = await _loadGLB(`${COMP_ROOT}${glb}`);
           _applyDoorColor(door);
+          // Pivot sits at hinge centre; door is offset back so its origin aligns correctly
+          door.position.set(-HINGE_OFF_X * MM, 0, -HINGE_OFF_Z * MM);
           const pivot = new THREE.Group();
-          pivot.position.set(x * MM, 0, DOOR_Z_MM * MM);
+          pivot.position.set((x + HINGE_OFF_X) * MM, 0, (DOOR_Z_MM + HINGE_OFF_Z) * MM);
           pivot.userData.isDoor   = true;
           pivot.userData.doorSide = 'left';
           pivot.add(door);
           group.add(pivot);
+          try {
+            const hinge = await _loadGLB(hingeGlb);
+            hinge.traverse(c => { if (c.isMesh) { c.material = c.material.clone(); c.material.color.setHex(0x111111); } });
+            hinge.position.set(x * MM, 0, DOOR_Z_MM * MM);
+            group.add(hinge);
+          } catch { /* hinge GLB optional */ }
         } catch (e) { console.warn('[CabinetBuilder] Door GLB not found:', glb); }
       }
 
@@ -565,13 +577,22 @@ window.CabinetBuilder = (function () {
           _applyDoorColor(door);
           const bbox  = new THREE.Box3().setFromObject(door);
           door.rotation.z = Math.PI;
-          door.position.set(0, bbox.max.y, 0);
+          // After z=PI rotation x is negated, so hinge offset becomes +X in local space
+          door.position.set(HINGE_OFF_X * MM, bbox.max.y, -HINGE_OFF_Z * MM);
           const pivot = new THREE.Group();
-          pivot.position.set(x * MM, 0, DOOR_Z_MM * MM);
+          pivot.position.set((x - HINGE_OFF_X) * MM, 0, (DOOR_Z_MM + HINGE_OFF_Z) * MM);
           pivot.userData.isDoor   = true;
           pivot.userData.doorSide = 'right';
           pivot.add(door);
           group.add(pivot);
+          try {
+            const hinge = await _loadGLB(hingeGlb);
+            hinge.traverse(c => { if (c.isMesh) { c.material = c.material.clone(); c.material.color.setHex(0x111111); } });
+            const hbbox = new THREE.Box3().setFromObject(hinge);
+            hinge.rotation.z = Math.PI;
+            hinge.position.set(x * MM, hbbox.max.y, DOOR_Z_MM * MM);
+            group.add(hinge);
+          } catch { /* hinge GLB optional */ }
         } catch (e) { console.warn('[CabinetBuilder] Door GLB not found:', glb); }
       }
 
@@ -590,6 +611,58 @@ window.CabinetBuilder = (function () {
         if (doorCfg) {
           if (ldStyle && doorCfg.left)  await _placeDoorLeft (ldStyle, doorCfg.left,  0);
           if (rdStyle && doorCfg.right) await _placeDoorRight(rdStyle, doorCfg.right, p.widthMM);
+        }
+      }
+
+      /* ── Side walls ───────────────────────────────── */
+      const swCode = (p.cov[7] || '0') + (p.cov[8] || '0'); // e.g. "11", "10", "01", "00"
+      if (swCode !== '00') {
+        const swGlb = `${COMP_ROOT}EZR_SW-${p.he}.glb`;
+        const coverColorHex = _clToHex(p.cl);
+
+        function _applyCoverColor(obj) {
+          obj.traverse(child => {
+            if (!child.isMesh) return;
+            const applyToMat = m => {
+              const mc = m.clone();
+              mc.color.setHex(coverColorHex);
+              mc.vertexColors = false;
+              mc.map = null;
+              mc.needsUpdate = true;
+              return mc;
+            };
+            if (Array.isArray(child.material))
+              child.material = child.material.map(applyToMat);
+            else
+              child.material = applyToMat(child.material);
+          });
+        }
+
+        // Left side wall: x=0, y=41mm, z=0, no rotation
+        if (swCode[0] === '1') {
+          try {
+            const sw = await _loadGLB(swGlb);
+            _applyCoverColor(sw);
+            sw.position.set(0, 42 * MM, 40 * MM);
+            sw.userData.isSideWall = true;
+            group.add(sw);
+          } catch (e) { console.warn('[CabinetBuilder] Side wall GLB not found:', swGlb); }
+        }
+
+        // Right side wall: rotate upside down (z=PI) around model center, shift to x=widthMM
+        if (swCode[1] === '1') {
+          try {
+            const sw = await _loadGLB(swGlb);
+            _applyCoverColor(sw);
+            const bbox = new THREE.Box3().setFromObject(sw);
+            sw.rotation.z = Math.PI;
+            sw.position.set(0, bbox.max.y, 0); // compensate for upside-down flip
+            const pivot = new THREE.Group();
+            pivot.position.set(p.widthMM * MM, 42 * MM, 40 * MM);
+            pivot.userData.isSideWall = true;
+            pivot.add(sw);
+            group.add(pivot);
+          } catch (e) { console.warn('[CabinetBuilder] Side wall GLB not found:', swGlb); }
         }
       }
     }

@@ -52,15 +52,6 @@ window.CabinetDrag = (function () {
   const SLIDE_DETACH   = 68;   // mm from anchor → detach & re-snap
   const MM             = 0.001; // mm → Three.js world units (same as cabinet-builder)
 
-  // Desired visual Y shift (mm, upward) produced by a 180° rotation.
-  // Implemented via a Group wrapper: group placed at snap.y + shift/2,
-  // inner mesh at local y = -shift/2.  Rotation flips the inner offset
-  // → net displacement = shift/2 + shift/2 = shift.  No explicit
-  // post-rotation translation needed.
-  const ROTATE_SHIFT_Y = {
-    'EZR_CBFX': 46,
-  };
-
   let _slidingIdx   = -1;    // index in _placed being slid
   let _slideOriginX = 0;     // world X of B6 anchor (m)
   let _slideNowMM   = 0;     // current offset in mm (accumulated)
@@ -197,10 +188,7 @@ window.CabinetDrag = (function () {
   }
 
   function _rotateAccessory(idx) {
-    const p = _placed[idx];
-    p.mesh.rotation.z += Math.PI;
-    p.rotated = !p.rotated;
-    // No position manipulation — the Group wrapper pivot handles the Y shift naturally
+    _placed[idx].mesh.rotation.z += Math.PI;
   }
 
   function _removeAccessory(idx) {
@@ -394,9 +382,6 @@ window.CabinetDrag = (function () {
     if (_nearIdx >= 0 && _canDrop) {
       const snap = _snapPts[_nearIdx];
       p.mesh.position.copy(snap.position);
-      // Re-apply the pivot half-offset so the Group stays correctly above the snap point
-      const shiftY = ROTATE_SHIFT_Y[p.accCode];
-      if (shiftY) p.mesh.position.y += (shiftY / 2) * MM;
       p.snapId = snap.id;
       Cabinet.placedAccessories[_movingIdx].snapId = snap.id;
       // Reset slide offset — new snap point is the new anchor at offset 0
@@ -436,25 +421,11 @@ window.CabinetDrag = (function () {
         c.material = new THREE.MeshStandardMaterial(
           { color: COLOR_PLACED, transparent: true, opacity: OPACITY_PLACED });
       });
-      // For accessories with a rotation pivot, wrap in a Group so that
-      // 180° rotation naturally produces the desired Y displacement.
-      const shiftY = ROTATE_SHIFT_Y[accCode];
-      let rootMesh;
-      if (shiftY) {
-        const half = shiftY / 2 * MM;
-        mesh.position.y = -half;          // inner mesh offset downward
-        rootMesh = new THREE.Group();
-        rootMesh.add(mesh);
-        rootMesh.position.copy(snap.position);
-        rootMesh.position.y += half;      // group pivot is half above snap
-      } else {
-        rootMesh = mesh;
-        rootMesh.position.copy(snap.position);
-      }
-      rootMesh.userData.isPlaced = true;
-      _scene.add(rootMesh);
+      mesh.position.copy(snap.position);
+      mesh.userData.isPlaced = true;
+      _scene.add(mesh);
       const slideOffset = accCode === SEP_HORIZ_CODE ? 0 : undefined;
-      _placed.push({ accCode, snapId: snap.id, mesh: rootMesh, slideOffset, rotated: false });
+      _placed.push({ accCode, snapId: snap.id, mesh, slideOffset, rotated: false });
       Cabinet.placedAccessories.push({ code: accCode, snapId: snap.id, slideOffset });
       if (window.CabinetUI) CabinetUI.rebuildBOM();
     } catch (e) {

@@ -2285,9 +2285,8 @@ function onReadyClick() {
   const assembly = CabinetBuilder.getAssembly?.();
   if (assembly) {
     const box = new THREE.Box3().setFromObject(assembly);
-    const GAP_MM    = 10;
     const width_mm  = (box.max.x - box.min.x) / 0.001;
-    Cabinet.currentCabinetXOffset += width_mm + GAP_MM;
+    Cabinet.currentCabinetXOffset += width_mm;
   }
 
   // Expand floor grid to cover the confirmed row

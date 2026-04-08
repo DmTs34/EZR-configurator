@@ -351,6 +351,11 @@ window.CabinetDrag = (function () {
     if (window.CabinetUI && window.CabinetUI.updateCabinetList) {
       CabinetUI.updateCabinetList();
     }
+
+    // Update floor to fit all cabinets
+    if (window.CabinetFloor && window.CabinetFloor.update) {
+      CabinetFloor.update();
+    }
   }
 
   function _showDeleteConfirmation(cabinetIdx) {

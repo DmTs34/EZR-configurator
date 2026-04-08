@@ -369,6 +369,8 @@ window.CabinetArrow = (function () {
             Cabinet.rows[arrowIdx].origin = newOrigin;
             _applyTransform(arrowIdx);
             CabinetBuilder.rebuildAllForNewOrigin();
+            // Update floor grid to fit all cabinets at new positions
+            if (window.CabinetFloor) CabinetFloor.update();
           }
         }
       } else {
@@ -551,6 +553,8 @@ window.CabinetArrow = (function () {
     _refreshActiveIndicators();
 
     _spawnArrow(newRowIdx);
+    // Update floor grid to fit all cabinets
+    if (window.CabinetFloor) CabinetFloor.update();
     showToast(`Row ${newRowIdx + 1} added — now editing row ${newRowIdx + 1}`, 'success');
   }
 
@@ -577,7 +581,7 @@ window.CabinetArrow = (function () {
       Cabinet.activeRowIdx = 0;
       if (typeof _resetForNextCabinet === 'function') _resetForNextCabinet();
       if (typeof _rebuildBOM === 'function') _rebuildBOM();
-      if (typeof _updateGrid === 'function') _updateGrid();
+      if (window.CabinetFloor) CabinetFloor.update();
       showToast('Row cleared', 'info');
       return;
     }

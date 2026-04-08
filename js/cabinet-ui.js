@@ -1115,10 +1115,10 @@ function _rebuildBOM() {
   const cabQty = {}, accQty = {};
 
   const allCabs = [
-    ...Cabinet.cabinets,
-    ...(Cabinet.isCodeValid && Cabinet.descriptionCode
-      ? [{ code: Cabinet.descriptionCode, placedAccessories: Cabinet.placedAccessories || [] }]
-      : []),
+    ...Cabinet.cabinets.map((cab) => ({
+      ...cab,
+      placedAccessories: cab.placedAccessories || [],
+    })),
   ];
 
   for (const cab of allCabs) {
@@ -1693,85 +1693,9 @@ function closePreview() {
   document.getElementById('previewModal')?.classList.remove('active');
 }
 
-/* ── Floor grid (squares) ─────────────────────────────────────────────────── */
-const GRID_CELL    = 0.6;   // 600 mm per cell
-const GRID_X_LEFT  = -2;    // 2 columns to the left of origin
-const GRID_Z_MIN   = -2;    // 2 rows in front (toward viewer, negative Z)
-const GRID_Z_MAX   =  1;    // 1 row behind (positive Z)
-let _floorGrid     = null;
-let _floorGridRightCol = 3; // initial: 4 columns to the right (cols 0..3) + 2 left = 6 total
-
-// Shared tile geometry/material — created once, reused for all tiles
-let _tileGeos = null;
-function _getTileGeos() {
-  if (!_tileGeos) {
-    const INNER = GRID_CELL * 0.984;
-    _tileGeos = {
-      fill: new THREE.PlaneGeometry(INNER, INNER),
-      edge: new THREE.EdgesGeometry(new THREE.PlaneGeometry(GRID_CELL, GRID_CELL)),
-      fillMat: new THREE.MeshBasicMaterial({ color: 0xf2f4f5, side: THREE.DoubleSide }),
-      edgeMat: new THREE.LineBasicMaterial({ color: 0xcccccc }),
-    };
-  }
-  return _tileGeos;
-}
-
-function _addTileColumn(col) {
-  const { fill, edge, fillMat, edgeMat } = _getTileGeos();
-  for (let row = GRID_Z_MIN; row <= GRID_Z_MAX; row++) {
-    const cx = (col + 0.5) * GRID_CELL;
-    const cz = (row + 0.5) * GRID_CELL;
-
-    const f = new THREE.Mesh(fill, fillMat);
-    f.rotation.x = -Math.PI / 2;
-    f.position.set(cx, -0.001, cz);
-    f.userData.tileCol = col;
-    _floorGrid.add(f);
-
-    const b = new THREE.LineSegments(edge, edgeMat);
-    b.rotation.x = -Math.PI / 2;
-    b.position.set(cx, -0.001, cz);
-    b.userData.tileCol = col;
-    _floorGrid.add(b);
-  }
-}
-
-function _removeTileColumn(col) {
-  const toRemove = [];
-  _floorGrid.traverse(o => { if (o.userData.tileCol === col) toRemove.push(o); });
-  for (const o of toRemove) _floorGrid.remove(o);
-}
-
-function _initFloorGrid() {
-  if (!Cabinet.scene) return;
-  _floorGrid = new THREE.Group();
-  _floorGrid.name = 'floorGrid';
-  for (let col = GRID_X_LEFT; col <= _floorGridRightCol; col++) _addTileColumn(col);
-  Cabinet.scene.add(_floorGrid);
-}
-
-/** Show/hide the scene grid during thumbnail captures. */
-function _setGridVisible(v) {
-  if (_floorGrid) _floorGrid.visible = v;
-}
-
-/** Add or remove columns on the right so there are always 2 free tiles beyond the cabinets. */
-function _updateGrid() {
-  if (!_floorGrid) return;
-  const rightEdgeWorld = _confirmedRightEdge() * 0.001;
-  const neededRightCol = Math.max(3, Math.ceil(rightEdgeWorld / GRID_CELL) + 1); // +2 free tiles
-
-  while (_floorGridRightCol < neededRightCol) {
-    _floorGridRightCol++;
-    _addTileColumn(_floorGridRightCol);
-  }
-  while (_floorGridRightCol > neededRightCol) {
-    _removeTileColumn(_floorGridRightCol);
-    _floorGridRightCol--;
-  }
-}
-
-window.addEventListener('cabinetSceneReady', _initFloorGrid);
+/* ── Floor grid is now managed by cabinet-floor.js ─────────────────────── */
+// Use CabinetFloor.update() to update the grid after changes
+// Use CabinetFloor.setVisible() to show/hide the grid
 
 /** Returns true if a static file exists (HEAD request, no-throw). */
 async function _staticExists(src) {
@@ -1895,9 +1819,9 @@ async function _captureAccThumb(code, cam = {}) {
   camera.aspect = W / H;
   camera.updateProjectionMatrix();
   rdr.setSize(W, H, false);
-  _setGridVisible(false);
+  CabinetFloor.setVisible(false);
   rdr.render(scene, camera);
-  _setGridVisible(true);
+  CabinetFloor.setVisible(true);
   const dataURL = rdr.domElement.toDataURL('image/jpeg', 0.88);
 
   // Restore renderer size
@@ -2109,9 +2033,9 @@ async function _capturePresetThumb(code, cam = {}) {
   camera.aspect = W / H;
   camera.updateProjectionMatrix();
   rdr.setSize(W, H, false);
-  _setGridVisible(false);
+  CabinetFloor.setVisible(false);
   rdr.render(scene, camera);
-  _setGridVisible(true);
+  CabinetFloor.setVisible(true);
   const dataURL = rdr.domElement.toDataURL('image/jpeg', 0.88);
 
   // Restore renderer
@@ -2423,7 +2347,7 @@ function _shiftCabinetsIfWidthChanged(newCode) {
   }
   console.log('cabinets after:', Cabinet.cabinets.map((c,i) => `[${i}] ${c.code} x=${c.xOffset}`));
   console.groupEnd();
-  _updateGrid();
+  CabinetFloor.update();
 }
 
 function _confirmedRightEdge() {
@@ -2467,9 +2391,6 @@ function onReadyClick() {
     return;
   }
 
-  // Sync final accessory list to state
-  Cabinet.cabinets[idx].placedAccessories = [...Cabinet.placedAccessories];
-
   // Finalize accessories (make opaque, push to _lockedPlaced)
   if (window.CabinetDrag) CabinetDrag.finalizeCurrent();
 
@@ -2482,13 +2403,13 @@ function onReadyClick() {
   // Show locked (dim) highlight
   if (p) CabinetBuilder.showLockedHighlight(Cabinet.cabinets[idx].xOffset, p.widthMM, idx, Cabinet.cabinets[idx].rowIdx ?? 0);
 
-  _updateGrid();
+  console.log('[Cabinet] onReadyClick: calling CabinetFloor.update() for row', Cabinet.cabinets[idx].rowIdx ?? 0);
+  CabinetFloor.update();
 
   // Reset active state — ready for new cabinet
   Cabinet.editingIdx        = -1;
   _editBaseOffsets          = [];
   _editBaseWidth            = 0;
-  Cabinet.placedAccessories = [];
   Cabinet.descriptionCode   = '';
   Cabinet.isCodeValid       = false;
   Cabinet.wizardSelections  = {};
@@ -2509,8 +2430,7 @@ async function switchToCabinetEdit(idx) {
   /* ── Finalize (lock) whichever cabinet is currently active ── */
   if (Cabinet.editingIdx >= 0) {
     const prevIdx = Cabinet.editingIdx;
-    // State is already up to date (written on every keystroke)
-    Cabinet.cabinets[prevIdx].placedAccessories = [...Cabinet.placedAccessories];
+    // State is already up to date (accessories synced on every add/remove)
     if (window.CabinetDrag) CabinetDrag.saveEditBack(prevIdx);
     CabinetBuilder.lockAssembly();
     const pp = CabinetBuilder.parseCode(Cabinet.cabinets[prevIdx].code);
@@ -2519,7 +2439,6 @@ async function switchToCabinetEdit(idx) {
     Cabinet.editingIdx        = -1;
     _editBaseOffsets          = [];
     _editBaseWidth            = 0;
-    Cabinet.placedAccessories = [];
     Cabinet.descriptionCode   = '';
     Cabinet.isCodeValid       = false;
     Cabinet.wizardSelections  = {};
@@ -2602,7 +2521,6 @@ async function deleteRow(rowIdx) {
     Cabinet.editingIdx        = -1;
     Cabinet.descriptionCode   = '';
     Cabinet.isCodeValid       = false;
-    Cabinet.placedAccessories = [];
     _resetForNextCabinet();
   }
 
@@ -2630,7 +2548,7 @@ async function deleteRow(rowIdx) {
 
   Cabinet.currentCabinetXOffset = _confirmedRightEdge();
   _rebuildBOM();
-  _updateGrid();
+  CabinetFloor.update();
   showToast('Row deleted', 'info');
 }
 

@@ -288,12 +288,12 @@ function _segmentValidity(s) {
   // AS validity: E only allowed for 15DAS; non-E not allowed for 15DAS
   let asValid = null;
   if (s.as) {
-    if (!['A','B','C','E'].includes(s.as)) {
+    if (!['A','B','E'].includes(s.as)) {
       asValid = false;
-    } else if (s.as === 'E' && s.de && s.de !== '15DAS') {
-      asValid = false; // E is exclusive to 15DAS
-    } else if (s.as !== 'E' && s.de === '15DAS') {
-      asValid = false; // 15DAS requires E
+    } else if (s.as === 'E' && s.de && !s.de.startsWith('15')) {
+      asValid = false; // E is exclusive to 15xx width
+    } else if (s.as !== 'E' && s.de?.startsWith('15')) {
+      asValid = false; // 15xx width requires E
     } else {
       asValid = true;
     }
@@ -320,8 +320,8 @@ function _segmentInvalidHint(index, s) {
     s.pr ? 'Design ' + s.de + ' is not valid for ' + s.pr : 'Select Product first',
     'Invalid door code',
     'Invalid covering code',
-    s.as === 'E' ? 'Assembly E (Two-box) is only valid for 15DAS design'
-                 : (s.de === '15DAS' ? '15DAS requires Assembly E (Two-box)' : 'Unknown assembly option: ' + s.as),
+    s.as === 'E' ? 'Assembly E (Two-box) is only valid for 1500mm width designs'
+                 : (s.de?.startsWith('15') ? '1500mm design requires Assembly E (Two-box)' : 'Unknown assembly option: ' + s.as),
     clHint,
   ];
   return hints[index] || 'Invalid value';
@@ -333,8 +333,8 @@ function _getValidationMsg(s, validity) {
   if (validity[2] === false) return { valid: false, msg: s.pr ? 'Design ' + s.de + ' not valid for ' + s.pr : 'Select Product first' };
   if (validity[3] === false) return { valid: false, msg: 'Invalid door code' };
   if (validity[5] === false) return { valid: false, msg:
-    s.as === 'E' ? 'Assembly E is only valid for 15DAS design'
-                 : (s.de === '15DAS' ? '15DAS requires Assembly E (Two-box)' : 'Unknown Assembly: ' + s.as) };
+    s.as === 'E' ? 'Assembly E is only valid for 1500mm width designs'
+                 : (s.de?.startsWith('15') ? '1500mm design requires Assembly E (Two-box)' : 'Unknown Assembly: ' + s.as) };
   if (validity[6] === false) return { valid: false, msg: 'Unknown Colour: ' + s.cl };
 
   if (!s.pr) return { valid: false, msg: 'Select Product' };
@@ -441,7 +441,11 @@ function _buildPopoverContent(index) {
 
   } else if (index === 5) { // AS
     html += '<div class="seg-popover-options">';
+    const is15xx = s.de?.startsWith('15');
     for (const a of AS_OPTIONS) {
+      if (a.code === 'C') continue;              // C removed
+      if (a.code === 'E' && !is15xx) continue;  // E only for 1500mm
+      if (a.code !== 'E' && is15xx) continue;   // 1500mm only allows E
       const sel = cur === a.code ? 'selected' : '';
       html += `<button class="seg-popover-btn ${sel}" onclick="_segSet(5,'${a.code}')">
         ${a.code}<span class="seg-popover-btn-sub">${a.desc}</span>
@@ -636,15 +640,7 @@ function _applySelectionsToCode() {
   _renderCodeEditor();
 
   if (isValid) {
-    Cabinet.descriptionCode = code;
-    Cabinet.isCodeValid     = true;
-    _renderCurrentCodeRow(code);
-    completeStep('step1');
-    _setUseConfigBtn(true);
-    if (window.CabinetDrag) CabinetDrag.clear();
-    _rebuildBOM();
-    if (window.CabinetBuilder) CabinetBuilder.build(code, { xOffset: Cabinet.currentCabinetXOffset });
-    _lastBuiltCode = code;
+    _onValidCode(code);
   } else {
     Cabinet.isCodeValid     = false;
     Cabinet.descriptionCode = '';
@@ -687,14 +683,44 @@ function _setUseConfigBtn(enabled) {
 }
 
 function _afterCodeComplete() {
-  const code = Cabinet.descriptionCode;
+  _onValidCode(Cabinet.descriptionCode);
+}
+
+/**
+ * Called whenever a valid code is produced (wizard or text input).
+ * Writes to state immediately — no confirmation needed.
+ */
+function _onValidCode(code) {
+  // ── If new cabinet (not editing): push to cabinets[] and start editing it ──
+  if (Cabinet.editingIdx < 0) {
+    const newIdx = Cabinet.cabinets.length;
+    Cabinet.cabinets.push({
+      code,
+      xOffset: Cabinet.currentCabinetXOffset,
+      rowIdx:  Cabinet.activeRowIdx ?? 0,
+      placedAccessories: [],
+      label: `ODF #${newIdx + 1}`,
+    });
+    Cabinet.editingIdx  = newIdx;
+    _editBaseOffsets    = Cabinet.cabinets.map(c => c.xOffset);
+    _editBaseWidth      = CabinetBuilder.parseCode(code)?.widthMM ?? 0;
+  } else {
+    // ── Editing existing: shift neighbours if width changed, then update code ──
+    _shiftCabinetsIfWidthChanged(code);
+    Cabinet.cabinets[Cabinet.editingIdx].code = code;
+    Cabinet.currentCabinetXOffset = Cabinet.cabinets[Cabinet.editingIdx].xOffset;
+  }
+
+  Cabinet.descriptionCode = code;
+  Cabinet.isCodeValid     = true;
+
   _renderCodeEditor();
   _renderCurrentCodeRow(code);
   completeStep('step1');
   _setUseConfigBtn(true);
   if (window.CabinetDrag) CabinetDrag.clear();
   _rebuildBOM();
-  if (window.CabinetBuilder) CabinetBuilder.build(Cabinet.descriptionCode, { xOffset: Cabinet.currentCabinetXOffset });
+  if (window.CabinetBuilder) CabinetBuilder.build(code, { xOffset: Cabinet.currentCabinetXOffset, noFitCamera: true });
   _lastBuiltCode = code;
 }
 
@@ -772,14 +798,14 @@ function _wizFillPanel(stepId) {
   } else if (stepId === 5) {
     _renderWizCovWalls();
   } else if (stepId === 6) {
-    const is15DAS = sel.de === '15DAS';
+    const is15xx = sel.de?.startsWith('15');
     document.querySelectorAll('[data-wiz-as]').forEach(el => {
       const code = el.dataset.wizAs;
-      // Show E only for 15DAS; hide A/B/C for 15DAS
+      // Show E only for 15xx; hide A/B/C for 15xx
       if (code === 'E') {
-        el.style.display = is15DAS ? '' : 'none';
+        el.style.display = is15xx ? '' : 'none';
       } else {
-        el.style.display = is15DAS ? 'none' : '';
+        el.style.display = is15xx ? 'none' : '';
       }
       el.classList.toggle('selected', code === sel.as);
     });
@@ -870,10 +896,10 @@ function _wizSelectDE(code) {
   const prev = _wiz.sel.de;
   _wiz.sel.de = code;
   // Keep AS in sync with 15DAS requirement
-  if (code === '15DAS') {
-    _wiz.sel.as = 'E'; // force Two-box for 15DAS
-  } else if (prev === '15DAS' && _wiz.sel.as === 'E') {
-    delete _wiz.sel.as; // clear E when leaving 15DAS
+  if (code.startsWith('15')) {
+    _wiz.sel.as = 'E'; // force Two-box for 1500mm designs
+  } else if (prev?.startsWith('15') && _wiz.sel.as === 'E') {
+    delete _wiz.sel.as; // clear E when leaving 1500mm design
   }
   _renderWizDE();
 }
@@ -922,8 +948,8 @@ function _wizValidateStep(stepId) {
   if (stepId === 2 && !s.he) return 'Select a height';
   if (stepId === 3 && !s.de) return 'Select a design';
   if (stepId === 6 && !s.as) return 'Select assembly type';
-  if (stepId === 6 && s.as === 'E' && s.de !== '15DAS') return 'Assembly E is only valid for 15DAS';
-  if (stepId === 6 && s.as !== 'E' && s.de === '15DAS') return '15DAS requires Assembly E (Two-box)';
+  if (stepId === 6 && s.as === 'E' && !s.de?.startsWith('15')) return 'Assembly E is only valid for 1500mm width designs';
+  if (stepId === 6 && s.as !== 'E' && s.de?.startsWith('15')) return '1500mm design requires Assembly E (Two-box)';
   if (stepId === 7 && !s.cl) return 'Select a colour';
   if (stepId === 7 && s.cl && (s.pr === 'EZR_FR' || s.pr === 'EZR_OP') && s.cl !== 'GY')
     return 'Frame and Open types can only be Grey (GY)';
@@ -1076,7 +1102,7 @@ function removePlate(i) {
   _renderPlatesList();
   _rebuildBOM();
 }
-function editPlate(i) { window.open('configurator.html','_blank'); }
+function editPlate(_i) { window.open('configurator.html','_blank'); }
 
 window.removePlate = removePlate;
 window.editPlate   = editPlate;
@@ -1182,13 +1208,15 @@ const PRESET_CONFIGS = [
 ];
 
 const ACCESSORY_CATALOG = [
-  { code: 'EZR_CBFX',             label: 'Cable Fixator',         desc: 'Cable management fixator' },
-  { code: 'EZR_MDL-L87-NT',       label: 'Module 87 mm',          desc: '87 mm module, no top panel' },
-  { code: 'EZR_MDL-L224-NT',      label: 'Module 224 mm',         desc: '224 mm module, no top panel' },
-  { code: 'EZR_RET',              label: 'Retaining Clip',        desc: 'Cable retaining clip' },
+  { code: 'EZR_CBFX',             label: 'Cable Fixator',         desc: 'Cable fixation plate' },
+  { code: 'EZR_MDL-L87-NT',       label: 'Module 87 mm',          desc: 'Short mandrel' },
+  { code: 'EZR_MDL-L224-NT',      label: 'Module 224 mm',         desc: 'Long mandrel' },
+  { code: 'EZR_RET',              label: 'Retaining Clip',        desc: 'Cable retainer' },
   { code: 'EZR_ROUT-BRKT',        label: 'Routing Bracket',       desc: 'Cable routing bracket' },
-  { code: 'EZR_SEP_PLT-4U-horiz', label: 'Separator Plate 4U H', desc: 'Horizontal separator plate, 4U' },
+  { code: 'EZR_SEP_PLT-4U-horiz', label: 'Separator Plate 4U H', desc: 'Separator plate, 4U' },
   { code: 'EZR_SEP_PLT-4U',       label: 'Separator Plate 4U',   desc: 'Separator plate, 4U' },
+  { code: 'EZR_TBRKT',            label: 'EZR-TBRKT',            desc: 'Tie bracket' },
+  { code: 'EZR_CAB_EXT',         label: 'Cabinet Extender',      desc: 'Cable exit' },
 ];
 
 const _accThumbs      = {};   // code → dataURL cache
@@ -1665,27 +1693,88 @@ function closePreview() {
   document.getElementById('previewModal')?.classList.remove('active');
 }
 
+/* ── Floor grid (squares) ─────────────────────────────────────────────────── */
+const GRID_CELL    = 0.6;   // 600 mm per cell
+const GRID_X_LEFT  = -2;    // 2 columns to the left of origin
+const GRID_Z_MIN   = -2;    // 2 rows in front (toward viewer, negative Z)
+const GRID_Z_MAX   =  1;    // 1 row behind (positive Z)
+let _floorGrid     = null;
+let _floorGridRightCol = 3; // initial: 4 columns to the right (cols 0..3) + 2 left = 6 total
+
+// Shared tile geometry/material — created once, reused for all tiles
+let _tileGeos = null;
+function _getTileGeos() {
+  if (!_tileGeos) {
+    const INNER = GRID_CELL * 0.984;
+    _tileGeos = {
+      fill: new THREE.PlaneGeometry(INNER, INNER),
+      edge: new THREE.EdgesGeometry(new THREE.PlaneGeometry(GRID_CELL, GRID_CELL)),
+      fillMat: new THREE.MeshBasicMaterial({ color: 0xf2f4f5, side: THREE.DoubleSide }),
+      edgeMat: new THREE.LineBasicMaterial({ color: 0xcccccc }),
+    };
+  }
+  return _tileGeos;
+}
+
+function _addTileColumn(col) {
+  const { fill, edge, fillMat, edgeMat } = _getTileGeos();
+  for (let row = GRID_Z_MIN; row <= GRID_Z_MAX; row++) {
+    const cx = (col + 0.5) * GRID_CELL;
+    const cz = (row + 0.5) * GRID_CELL;
+
+    const f = new THREE.Mesh(fill, fillMat);
+    f.rotation.x = -Math.PI / 2;
+    f.position.set(cx, -0.001, cz);
+    f.userData.tileCol = col;
+    _floorGrid.add(f);
+
+    const b = new THREE.LineSegments(edge, edgeMat);
+    b.rotation.x = -Math.PI / 2;
+    b.position.set(cx, -0.001, cz);
+    b.userData.tileCol = col;
+    _floorGrid.add(b);
+  }
+}
+
+function _removeTileColumn(col) {
+  const toRemove = [];
+  _floorGrid.traverse(o => { if (o.userData.tileCol === col) toRemove.push(o); });
+  for (const o of toRemove) _floorGrid.remove(o);
+}
+
+function _initFloorGrid() {
+  if (!Cabinet.scene) return;
+  _floorGrid = new THREE.Group();
+  _floorGrid.name = 'floorGrid';
+  for (let col = GRID_X_LEFT; col <= _floorGridRightCol; col++) _addTileColumn(col);
+  Cabinet.scene.add(_floorGrid);
+}
+
 /** Show/hide the scene grid during thumbnail captures. */
 function _setGridVisible(v) {
-  if (!Cabinet.scene) return;
-  Cabinet.scene.traverse(obj => { if (obj.type === 'GridHelper') obj.visible = v; });
+  if (_floorGrid) _floorGrid.visible = v;
 }
 
-/** Expand the floor grid to cover the full confirmed cabinet row. */
+/** Add or remove columns on the right so there are always 2 free tiles beyond the cabinets. */
 function _updateGrid() {
-  if (!Cabinet.scene || !Cabinet.gridHelper) return;
-  const totalW = Cabinet.currentCabinetXOffset * 0.001; // mm → Three.js world units
-  const BASE   = 6;     // minimum 6 m (3 m each side of origin)
-  const size   = Math.max(BASE, totalW * 2 + BASE); // symmetric around origin, grows right
-  const divs   = Math.max(10, Math.round(size / 0.6)); // ~600 mm per cell
-  Cabinet.scene.remove(Cabinet.gridHelper);
-  Cabinet.gridHelper = new THREE.GridHelper(size, divs, 0xd0d0d0, 0xe8e8e8);
-  // position stays at origin — grid expands symmetrically
-  Cabinet.scene.add(Cabinet.gridHelper);
+  if (!_floorGrid) return;
+  const rightEdgeWorld = _confirmedRightEdge() * 0.001;
+  const neededRightCol = Math.max(3, Math.ceil(rightEdgeWorld / GRID_CELL) + 1); // +2 free tiles
+
+  while (_floorGridRightCol < neededRightCol) {
+    _floorGridRightCol++;
+    _addTileColumn(_floorGridRightCol);
+  }
+  while (_floorGridRightCol > neededRightCol) {
+    _removeTileColumn(_floorGridRightCol);
+    _floorGridRightCol--;
+  }
 }
+
+window.addEventListener('cabinetSceneReady', _initFloorGrid);
 
 /** Returns true if a static file exists (HEAD request, no-throw). */
-function _staticExists(src) {
+async function _staticExists(src) {
   return fetch(src, { method: 'HEAD' })
     .then(r => r.ok)
     .catch(() => false);
@@ -1710,6 +1799,13 @@ function _renderAccessoryCards() {
 }
 
 async function _renderAccThumbs() {
+  // If all thumbs are already cached, just apply them — no scene disruption
+  const allCached = ACCESSORY_CATALOG.every(a => !!_accThumbs[a.code]);
+  if (allCached) {
+    for (const a of ACCESSORY_CATALOG) _applyAccThumb(a.code, _accThumbs[a.code]);
+    return;
+  }
+
   if (_accThumbsActive) return;
   if (!Cabinet.renderer || !Cabinet.scene || !Cabinet.camera) return;
   _accThumbsActive = true;
@@ -1752,7 +1848,7 @@ async function _renderAccThumbs() {
 
   // Restore original assembly
   if (origCode && Cabinet.isCodeValid) {
-    await CabinetBuilder.build(origCode, { noFade: true, xOffset: Cabinet.currentCabinetXOffset }).catch(() => {});
+    await CabinetBuilder.build(origCode, { noFade: true, xOffset: Cabinet.currentCabinetXOffset, noFitCamera: true }).catch(() => {});
   } else {
     CabinetBuilder.clearAssembly({ noFade: true });
   }
@@ -1816,6 +1912,9 @@ async function _captureAccThumb(code, cam = {}) {
 function _applyAccThumb(code, dataURL) {
   const el = document.getElementById(_safeThumbId(code));
   if (!el) return;
+  // If img already exists just update src — don't add another one
+  const existing = el.querySelector('img');
+  if (existing) { existing.src = dataURL; return; }
   const img = document.createElement('img');
   img.src = dataURL;
   const spinner = el.querySelector('.preset-thumb-spinner');
@@ -1849,6 +1948,9 @@ function useEZRConfig() {
   activateStep('step3');
   unlockStep('step4');
   document.getElementById('step3').scrollIntoView({ behavior: 'smooth' });
+  // Reset accessory grid scroll so cards always start from the left
+  const accGrid = document.getElementById('accGrid');
+  if (accGrid) accGrid.scrollLeft = 0;
   _renderAccThumbs();
 }
 
@@ -2024,6 +2126,7 @@ function renderSnapshot() {
   const rdr = Cabinet.renderer;
   if (!rdr) { showToast('Nothing to render', 'error'); return; }
 
+  rdr.render(Cabinet.scene, Cabinet.camera);
   const dataURL = rdr.domElement.toDataURL('image/png');
   const a = Object.assign(document.createElement('a'), {
     href: dataURL,
@@ -2153,7 +2256,7 @@ function _initCodeValueInput() {
         completeStep('step1');
         _setUseConfigBtn(true);
         _rebuildBOM();
-        if (window.CabinetBuilder) CabinetBuilder.build(code, { xOffset: Cabinet.currentCabinetXOffset });
+        if (window.CabinetBuilder) CabinetBuilder.build(code, { xOffset: Cabinet.currentCabinetXOffset, noFitCamera: true });
         _lastBuiltCode = code;
       } else {
         Cabinet.isCodeValid     = false;
@@ -2269,51 +2372,193 @@ document.addEventListener('DOMContentLoaded', () => {
   _initCodeValueInput();
 });
 
+/** Returns the rightmost X edge (mm) across all confirmed cabinets. */
+// Base state saved when entering edit mode — used to compute absolute shifts
+let _editBaseOffsets = [];  // xOffset (mm) per cabinet at edit-start
+let _editBaseWidth   = 0;   // width (mm) of the cabinet being edited at edit-start
+
+/**
+ * When editing an existing cabinet and its width changes,
+ * reposition all cabinets to the right using absolute offsets (not incremental delta).
+ * Safe to call on every keystroke.
+ */
+function _shiftCabinetsIfWidthChanged(newCode) {
+  const idx = Cabinet.editingIdx;
+  if (idx < 0 || !_editBaseOffsets.length) return;
+  const newP = CabinetBuilder.parseCode(newCode);
+  if (!newP) return;
+  const delta = newP.widthMM - _editBaseWidth; // always relative to edit-start
+
+  console.group('[Cabinet shift] editingIdx=%d  baseWidth=%d  newWidth=%d  delta=%d',
+    idx, _editBaseWidth, newP.widthMM, delta);
+  console.log('baseOffsets:', [..._editBaseOffsets]);
+  console.log('cabinets before:', Cabinet.cabinets.map((c,i) => `[${i}] ${c.code} x=${c.xOffset}`));
+
+  const editingRowIdx = Cabinet.cabinets[idx]?.rowIdx ?? 0;
+
+  for (let i = idx + 1; i < Cabinet.cabinets.length; i++) {
+    // Only shift cabinets in the same row as the one being edited
+    if ((Cabinet.cabinets[i].rowIdx ?? 0) !== editingRowIdx) continue;
+
+    const targetOffset = (_editBaseOffsets[i] ?? 0) + delta;
+    const currentOffset = Cabinet.cabinets[i].xOffset;
+    const diff = targetOffset - currentOffset;
+    if (diff === 0) continue;
+
+    Cabinet.cabinets[i].xOffset = targetOffset;
+    // After unlockAssembly(idx), _lockedAssemblies has one fewer entry —
+    // cabinet at cabinets[i] (i > idx) sits at position i-1 in _lockedAssemblies.
+    const grp = CabinetBuilder.getLockedAssembly(i - 1);
+    if (grp) {
+      const { x, z } = CabinetBuilder.rowWorldPos(targetOffset, editingRowIdx);
+      grp.position.x = x;
+      grp.position.z = z;
+    }
+    if (window.CabinetDrag) CabinetDrag.shiftLockedPlaced(i, diff, true);
+
+    // Rebuild highlight mat for this cabinet
+    CabinetBuilder.removeLockedHighlight(i);
+    const p = CabinetBuilder.parseCode(Cabinet.cabinets[i].code);
+    if (p) CabinetBuilder.showLockedHighlight(targetOffset, p.widthMM, i, editingRowIdx);
+  }
+  console.log('cabinets after:', Cabinet.cabinets.map((c,i) => `[${i}] ${c.code} x=${c.xOffset}`));
+  console.groupEnd();
+  _updateGrid();
+}
+
+function _confirmedRightEdge() {
+  const activeRow = Cabinet.activeRowIdx ?? 0;
+  let maxX = 0;
+  for (const cab of Cabinet.cabinets) {
+    if ((cab.rowIdx ?? 0) !== activeRow) continue;
+    const p = CabinetBuilder.parseCode(cab.code);
+    if (p) maxX = Math.max(maxX, cab.xOffset + p.widthMM);
+  }
+  return maxX;
+}
+
+/** Returns true if [x, x+w] overlaps any confirmed cabinet except skipIdx (tolerance 1 mm). */
+function _overlapsConfirmed(xMM, widthMM, skipIdx = -1) {
+  const TOL = 1;
+  const a0 = xMM + TOL, a1 = xMM + widthMM - TOL;
+  const activeRow = Cabinet.activeRowIdx ?? 0;
+  for (let i = 0; i < Cabinet.cabinets.length; i++) {
+    if (i === skipIdx) continue;
+    const cab = Cabinet.cabinets[i];
+    if ((cab.rowIdx ?? 0) !== activeRow) continue;
+    const p = CabinetBuilder.parseCode(cab.code);
+    if (!p) continue;
+    const b0 = cab.xOffset + TOL, b1 = cab.xOffset + p.widthMM - TOL;
+    if (a0 < b1 && a1 > b0) return true;
+  }
+  return false;
+}
+
 function onReadyClick() {
-  if (!Cabinet.isCodeValid || !Cabinet.descriptionCode) {
+  if (!Cabinet.isCodeValid || !Cabinet.descriptionCode || Cabinet.editingIdx < 0) {
     showToast('Configure a cabinet first', 'error'); return;
   }
-  if (Cabinet.cabinets.length >= 12) {
-    showToast('Maximum 12 cabinets reached', 'error'); return;
+
+  const idx = Cabinet.editingIdx;
+  const p   = CabinetBuilder.parseCode(Cabinet.descriptionCode);
+
+  if (p && _overlapsConfirmed(Cabinet.cabinets[idx].xOffset, p.widthMM, idx)) {
+    showToast('Cabinet overlaps an existing cabinet — cannot place here', 'error');
+    return;
   }
 
-  // Finalize accessories — make opaque, lock from interaction
+  // Sync final accessory list to state
+  Cabinet.cabinets[idx].placedAccessories = [...Cabinet.placedAccessories];
+
+  // Finalize accessories (make opaque, push to _lockedPlaced)
   if (window.CabinetDrag) CabinetDrag.finalizeCurrent();
 
-  // Compute next X offset from current assembly's bounding box.
-  // Use full cabinet width so centering of the geometry doesn't cause overlap.
-  const assembly = CabinetBuilder.getAssembly?.();
-  if (assembly) {
-    const box = new THREE.Box3().setFromObject(assembly);
-    const width_mm  = (box.max.x - box.min.x) / 0.001;
-    Cabinet.currentCabinetXOffset += width_mm;
-  }
+  // Advance currentCabinetXOffset to right edge of the whole row
+  Cabinet.currentCabinetXOffset = _confirmedRightEdge();
 
-  // Expand floor grid to cover the confirmed row
-  _updateGrid();
-
-  // Detach assembly from management (keep it in scene)
+  // Lock assembly in scene
   CabinetBuilder.lockAssembly();
 
-  // Save confirmed cabinet
-  Cabinet.cabinets.push({
-    code: Cabinet.descriptionCode,
-    placedAccessories: [...Cabinet.placedAccessories],
-  });
+  // Show locked (dim) highlight
+  if (p) CabinetBuilder.showLockedHighlight(Cabinet.cabinets[idx].xOffset, p.widthMM, idx, Cabinet.cabinets[idx].rowIdx ?? 0);
 
-  // Reset current cabinet state
+  _updateGrid();
+
+  // Reset active state — ready for new cabinet
+  Cabinet.editingIdx        = -1;
+  _editBaseOffsets          = [];
+  _editBaseWidth            = 0;
   Cabinet.placedAccessories = [];
   Cabinet.descriptionCode   = '';
   Cabinet.isCodeValid       = false;
   Cabinet.wizardSelections  = {};
   _lastBuiltCode            = null;
 
-  // Rebuild BOM and reset UI for next cabinet
   _rebuildBOM();
   _resetForNextCabinet();
 
   const n = Cabinet.cabinets.length;
   showToast(`Cabinet ${n} confirmed — configure cabinet ${n + 1}`, 'success');
+}
+
+
+async function switchToCabinetEdit(idx) {
+  if (idx < 0 || idx >= Cabinet.cabinets.length) return;
+  if (idx === Cabinet.editingIdx) return; // already editing this one
+
+  /* ── Finalize (lock) whichever cabinet is currently active ── */
+  if (Cabinet.editingIdx >= 0) {
+    const prevIdx = Cabinet.editingIdx;
+    // State is already up to date (written on every keystroke)
+    Cabinet.cabinets[prevIdx].placedAccessories = [...Cabinet.placedAccessories];
+    if (window.CabinetDrag) CabinetDrag.saveEditBack(prevIdx);
+    CabinetBuilder.lockAssembly();
+    const pp = CabinetBuilder.parseCode(Cabinet.cabinets[prevIdx].code);
+    if (pp) CabinetBuilder.showLockedHighlight(Cabinet.cabinets[prevIdx].xOffset, pp.widthMM, prevIdx, Cabinet.cabinets[prevIdx].rowIdx ?? 0);
+    // Reset active cabinet state
+    Cabinet.editingIdx        = -1;
+    _editBaseOffsets          = [];
+    _editBaseWidth            = 0;
+    Cabinet.placedAccessories = [];
+    Cabinet.descriptionCode   = '';
+    Cabinet.isCodeValid       = false;
+    Cabinet.wizardSelections  = {};
+    _lastBuiltCode            = null;
+  }
+
+  /* ── Switch to cabinet idx ── */
+  Cabinet.editingIdx = idx;
+  // Snapshot base xOffsets for all cabinets so width-change shifts are absolute
+  _editBaseOffsets = Cabinet.cabinets.map(c => c.xOffset);
+  _editBaseWidth   = CabinetBuilder.parseCode(Cabinet.cabinets[idx].code)?.widthMM ?? 0;
+  const cab = Cabinet.cabinets[idx];
+
+  // Switch active row to match the cabinet being edited
+  Cabinet.activeRowIdx = cab.rowIdx ?? 0;
+
+  // Move accessories from _lockedPlaced → _placed, restore green material
+  if (window.CabinetDrag) CabinetDrag.loadForEdit(idx);
+
+  // Remove locked assembly and highlight from scene — build() will create a fresh one
+  CabinetBuilder.unlockAssembly(idx);
+  CabinetBuilder.removeLockedHighlight(idx);
+
+  // Rebuild assembly
+  Cabinet.descriptionCode        = cab.code;
+  Cabinet.isCodeValid            = true;
+  Cabinet.currentCabinetXOffset  = cab.xOffset;
+  Cabinet.wizardSelections       = parseCode(cab.code) || {};
+  _lastBuiltCode                 = cab.code;
+
+  await CabinetBuilder.build(cab.code, { xOffset: cab.xOffset, rowIdx: cab.rowIdx ?? 0, noFitCamera: true });
+
+  _renderCurrentCodeRow(cab.code);
+  _renderCodeEditor();
+  completeStep('step1');
+  _setUseConfigBtn(true);
+  _rebuildBOM();
+  useEZRConfig();
+  showToast('Editing cabinet — ' + cab.code, 'info');
 }
 
 function _resetForNextCabinet() {
@@ -2326,8 +2571,67 @@ function _resetForNextCabinet() {
     if (id !== 'step1') el.classList.add('locked', 'collapsed');
   });
   _resetCodeState();
-  _renderAccessoryCards();
   _expandStep1?.();
+}
+
+/* ══════════════════════════════════════════════════════
+   ROW MANAGEMENT
+══════════════════════════════════════════════════════ */
+
+/**
+ * Switch the active row. New cabinets will be added to this row.
+ * Resets currentCabinetXOffset to the right edge of that row.
+ */
+function switchActiveRow(rowIdx) {
+  if (rowIdx < 0 || rowIdx >= Cabinet.rows.length) return;
+  Cabinet.activeRowIdx = rowIdx;
+  Cabinet.currentCabinetXOffset = _confirmedRightEdge();
+  if (window.CabinetArrow) CabinetArrow.refreshActiveIndicators();
+}
+
+/**
+ * Delete a row and all its cabinets.
+ * If it was the last row, keep one empty row.
+ * Never called with a row that has an active editingIdx cabinet — caller
+ * must ensure the cabinet is cancelled/confirmed first.
+ */
+async function deleteRow(rowIdx) {
+  // Cancel any active edit if it belongs to this row
+  if (Cabinet.editingIdx >= 0 && (Cabinet.cabinets[Cabinet.editingIdx]?.rowIdx ?? 0) === rowIdx) {
+    CabinetBuilder.clearAssembly({ noFade: true });
+    Cabinet.editingIdx        = -1;
+    Cabinet.descriptionCode   = '';
+    Cabinet.isCodeValid       = false;
+    Cabinet.placedAccessories = [];
+    _resetForNextCabinet();
+  }
+
+  // Remove all cabinets of this row from state
+  Cabinet.cabinets = Cabinet.cabinets.filter(c => (c.rowIdx ?? 0) !== rowIdx);
+
+  // Rebuild scene from remaining state
+  await CabinetBuilder.rebuildAllCabinetsFromState();
+  if (window.CabinetDrag) CabinetDrag.rebuildLockedFromState();
+
+  // Remove the row config
+  if (Cabinet.rows.length > 1) {
+    Cabinet.rows.splice(rowIdx, 1);
+    // Fix rowIdx references in remaining cabinets
+    for (const cab of Cabinet.cabinets) {
+      if ((cab.rowIdx ?? 0) > rowIdx) cab.rowIdx--;
+    }
+    // Clamp activeRowIdx
+    Cabinet.activeRowIdx = Math.min(Cabinet.activeRowIdx ?? 0, Cabinet.rows.length - 1);
+  } else {
+    // Last row — reset to empty
+    Cabinet.rows[0] = { id: 0, origin: { x: 0, z: 0 }, angle: 0 };
+    Cabinet.activeRowIdx = 0;
+  }
+
+  Cabinet.currentCabinetXOffset = _confirmedRightEdge();
+  _rebuildBOM();
+  _updateGrid();
+  showToast('Row deleted', 'info');
 }
 
 /* ══════════════════════════════════════════════════════
@@ -2371,7 +2675,7 @@ Object.assign(window, {
   toggleStep,
   setMode, openWizard,
   wizSelectPR, wizSelectHE, wizSelectAS, wizSelectCL, wizNext, wizBack,
-  openPlateConfigurator, saveConfig, exportBOM, renderSnapshot,
+  openPlateConfigurator, saveConfig, exportBOM, renderSnapshot, switchToCabinetEdit,
   openModal, closeModal, showToast,
   // Presets
   togglePresetGallery, selectPreset,

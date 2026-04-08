@@ -45,23 +45,20 @@ window.CabinetDrag = (function () {
   // ── Move drag state ───────────────────────────────
   let _movingIdx     = -1;   // index in _placed being moved
   let _moveOriginPos = null; // THREE.Vector3, restored on cancel
+  let _ctrlHeld      = false;
 
-  // ── Slide state (EZR_SEP_PLT-4U-horiz only) ──────
-  const SEP_HORIZ_CODE = 'EZR_SEP_PLT-4U-horiz';
-  const SLIDE_MAX_MM   = 53;   // allowed slide range (mm)
-  const SLIDE_DETACH   = 68;   // mm from anchor → detach & re-snap
-  const MM             = 0.001; // mm → Three.js world units (same as cabinet-builder)
+  // ── Pending mousedown state ───────────────────────
+  let _mouseDownIdx  = -1;   // accessory hit on mousedown (pending click vs drag)
+  let _mouseDownX    = 0;
+  let _mouseDownY    = 0;
+  let _mouseDownCtrl = false; // was Ctrl held at mousedown
+  const DRAG_THRESHOLD = 5;  // px — movement to distinguish click from drag
 
-  let _slidingIdx   = -1;    // index in _placed being slid
-  let _slideOriginX = 0;     // world X of B6 anchor (m)
-  let _slideNowMM   = 0;     // current offset in mm (accumulated)
-  let _slideLastCX  = 0;     // screen X at last mousemove (incremental delta)
-  let _slidePxPerMM = 1;     // screen pixels per 1 mm at snap depth
-  let _slideMarkers = [];    // two limit-marker spheres (±SLIDE_MAX_MM)
-  let _slideCanDrop = true;  // false when current slide position has a collision
+  const MM = 0.001; // mm → Three.js world units (same as cabinet-builder)
 
   // ── Hover state ───────────────────────────────────
   let _hoveredIdx = -1;
+  let _hoveredMat = false; // true when cursor is over a locked-cabinet highlight mat
 
   // ── Placed accessories ────────────────────────────
   let _placed       = []; // { accCode, snapId, mesh } — current cabinet
@@ -84,24 +81,41 @@ window.CabinetDrag = (function () {
     canvas.addEventListener('mousedown',  _onCanvasDown, true);
     canvas.addEventListener('contextmenu', _onContextMenu, true);
 
+    // Label overlay contextmenu — fired via custom event from builder
+    window.addEventListener('cabinetLabelContextMenu', (e) => {
+      _showRenameDlg(e.detail.cabinetIdx);
+    });
+
     const grid = document.getElementById('accGrid');
     if (grid) grid.addEventListener('mousedown', _onCardDown);
 
     document.addEventListener('mousemove', _onMove);
     document.addEventListener('mouseup',   _onUp);
     document.addEventListener('mousedown', _hideCtxMenu); // click outside → close
+    // Prevent browser native drag from interfering with Ctrl+drag copy
+    canvas.addEventListener('dragstart', e => e.preventDefault());
     document.addEventListener('keydown', e => {
+      if (e.key === 'Control') {
+        _ctrlHeld = true;
+        if (_hoveredIdx >= 0 && !_dragging)
+          _canvas.style.cursor = 'copy';
+      }
       if (e.key === 'Escape') {
-        if (_slidingIdx >= 0) _cancelSlide();
-        else if (_dragging)   _endDrag();
+        if (_dragging) _endDrag();
+      }
+    });
+    document.addEventListener('keyup', e => {
+      if (e.key === 'Control') {
+        _ctrlHeld = false;
+        if (_hoveredIdx >= 0 && !_dragging)
+          _canvas.style.cursor = 'grab';
       }
     });
   }
 
   // Finalize current cabinet accessories — make fully opaque, lock them
-  // (also ends any active slide so offset is persisted before locking)
   function finalizeCurrent() {
-    if (_slidingIdx >= 0) _finishSlide();
+    if (window.CabinetBuilder) CabinetBuilder.clearHighlight();
     for (const p of _placed) {
       p.mesh.traverse(c => {
         if (!c.isMesh) return;
@@ -123,7 +137,6 @@ window.CabinetDrag = (function () {
 
   // Remove current cabinet's placed accessories (called on cabinet rebuild/change)
   function clear() {
-    if (_slidingIdx >= 0) { _hideSlideMarkers(); _slidingIdx = -1; }
     for (const p of _placed) _scene.remove(p.mesh);
     _placed = [];
     Cabinet.placedAccessories = [];
@@ -141,11 +154,82 @@ window.CabinetDrag = (function () {
      Context menu
   ══════════════════════════════════════════════════ */
   function _onContextMenu(e) {
-    const idx = _hitPlaced(e.clientX, e.clientY);
-    if (idx < 0) return;
+    // Check if clicking on a cabinet
+    const cabinetIdx = _hitHighlightMat(e.clientX, e.clientY);
+    if (cabinetIdx >= 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      _showCabinetCtxMenu(cabinetIdx, e.clientX, e.clientY);
+      return;
+    }
+
+    // Check if clicking on an accessory
+    const accIdx = _hitPlaced(e.clientX, e.clientY);
+    if (accIdx < 0) return;
     e.preventDefault();
     e.stopPropagation();
-    _showCtxMenu(idx, e.clientX, e.clientY);
+    _showCtxMenu(accIdx, e.clientX, e.clientY);
+  }
+
+  function _onLabelContextMenu(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const cabinetIdx = parseInt(e.currentTarget.dataset.cabinetIdx ?? '-1');
+    if (cabinetIdx < 0) return;
+    _showRenameDlg(cabinetIdx);
+  }
+
+  function _showRenameDlg(cabinetIdx) {
+    const current = Cabinet.cabinets[cabinetIdx]?.label || `ODF #${cabinetIdx + 1}`;
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:10001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.25);';
+
+    const dlg = document.createElement('div');
+    dlg.style.cssText = 'background:#fff;border-radius:10px;padding:24px 28px;box-shadow:0 8px 32px rgba(0,0,0,.18);min-width:300px;font-family:Mont,sans-serif;';
+
+    const title = document.createElement('div');
+    title.textContent = 'Rename cabinet';
+    title.style.cssText = 'font-size:15px;font-weight:600;margin-bottom:16px;color:#1a1a1a;';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = current;
+    input.style.cssText = 'width:100%;box-sizing:border-box;padding:8px 10px;font-size:14px;border:1px solid #d0d0d0;border-radius:6px;outline:none;font-family:inherit;';
+
+    const btns = document.createElement('div');
+    btns.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px;';
+
+    const btnCancel = document.createElement('button');
+    btnCancel.textContent = 'Cancel';
+    btnCancel.style.cssText = 'padding:7px 16px;border:1px solid #d0d0d0;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;';
+
+    const btnOk = document.createElement('button');
+    btnOk.textContent = 'Rename';
+    btnOk.style.cssText = 'padding:7px 16px;border:none;border-radius:6px;background:#2a7ae4;color:#fff;cursor:pointer;font-size:13px;font-weight:600;';
+
+    const confirm = () => {
+      const val = input.value.trim();
+      if (val) {
+        Cabinet.cabinets[cabinetIdx].label = val;
+        CabinetBuilder.updateLabel(cabinetIdx, val);
+      }
+      overlay.remove();
+    };
+
+    btnOk.onclick     = confirm;
+    btnCancel.onclick = () => overlay.remove();
+    input.onkeydown   = (e) => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') overlay.remove(); };
+    overlay.onclick   = (e) => { if (e.target === overlay) overlay.remove(); };
+
+    btns.appendChild(btnCancel);
+    btns.appendChild(btnOk);
+    dlg.appendChild(title);
+    dlg.appendChild(input);
+    dlg.appendChild(btns);
+    overlay.appendChild(dlg);
+    document.body.appendChild(overlay);
+    setTimeout(() => { input.focus(); input.select(); }, 0);
   }
 
   function _showCtxMenu(idx, cx, cy) {
@@ -187,8 +271,162 @@ window.CabinetDrag = (function () {
     if (_ctxMenu) { _ctxMenu.remove(); _ctxMenu = null; }
   }
 
+  function _showCabinetCtxMenu(cabinetIdx, cx, cy) {
+    _hideCtxMenu();
+
+    const menu = document.createElement('div');
+    menu.style.cssText = [
+      'position:fixed', `left:${cx}px`, `top:${cy}px`, 'z-index:10000',
+      'background:#fff', 'border:1px solid #e0e0e0', 'border-radius:6px',
+      'box-shadow:0 4px 16px rgba(0,0,0,.15)', 'overflow:hidden',
+      'font-size:13px', 'min-width:140px',
+    ].join(';');
+
+    const itemDuplicate = document.createElement('div');
+    itemDuplicate.style.cssText = 'padding:8px 14px;cursor:pointer;color:#1a1a1a;';
+    itemDuplicate.textContent = 'Duplicate cabinet';
+    itemDuplicate.onmouseenter = () => itemDuplicate.style.background = '#f5f5f5';
+    itemDuplicate.onmouseleave = () => itemDuplicate.style.background = '';
+    itemDuplicate.onmousedown  = (e) => { e.stopPropagation(); _duplicateCabinet(cabinetIdx); _hideCtxMenu(); };
+
+    const sep = document.createElement('div');
+    sep.style.cssText = 'height:1px;background:#e8e8e8;margin:2px 0;';
+
+    const itemDelete = document.createElement('div');
+    itemDelete.style.cssText = 'padding:8px 14px;cursor:pointer;color:#c0392b;font-weight:500;';
+    itemDelete.textContent = 'Delete cabinet';
+    itemDelete.onmouseenter = () => itemDelete.style.background = '#fff5f5';
+    itemDelete.onmouseleave = () => itemDelete.style.background = '';
+    itemDelete.onmousedown  = (e) => { e.stopPropagation(); _showDeleteConfirmation(cabinetIdx); _hideCtxMenu(); };
+
+    menu.appendChild(itemDuplicate);
+    menu.appendChild(sep);
+    menu.appendChild(itemDelete);
+    document.body.appendChild(menu);
+    _ctxMenu = menu;
+  }
+
+  function _duplicateCabinet(cabinetIdx) {
+    const cabinet = Cabinet.cabinets[cabinetIdx];
+    if (!cabinet) return;
+
+    // Always place duplicate in the active row
+    const targetRowIdx = Cabinet.activeRowIdx ?? 0;
+
+    // Find all cabinets in the active row and calculate total width
+    const rowCabinets = Cabinet.cabinets.filter(c => c.rowIdx === targetRowIdx);
+    let maxXEnd = 0;
+    for (const cab of rowCabinets) {
+      const widthMM = parseInt(cab.code.split('-')[2].slice(0, 2)) * 100;
+      const xEnd = cab.xOffset + widthMM;
+      if (xEnd > maxXEnd) maxXEnd = xEnd;
+    }
+
+    // Copy manually placed accessories from the original cabinet
+    // If the cabinet is currently being edited, use the global placedAccessories
+    // Otherwise use the accessories stored in the cabinet object
+    let accessoriesToCopy = [];
+    if (Cabinet.editingIdx === cabinetIdx && Cabinet.placedAccessories) {
+      accessoriesToCopy = [...Cabinet.placedAccessories];
+    } else if (cabinet.placedAccessories) {
+      accessoriesToCopy = [...cabinet.placedAccessories];
+    }
+
+    // Create a new cabinet with the same code, positioned at the end of the active row
+    const newCabinet = {
+      code: cabinet.code,
+      xOffset: maxXEnd,
+      rowIdx: targetRowIdx,
+      placedAccessories: accessoriesToCopy,
+      label: `ODF #${Cabinet.cabinets.length + 1}`,
+    };
+
+    Cabinet.cabinets.push(newCabinet);
+
+    // Rebuild the scene to include the new cabinet
+    if (window.CabinetBuilder && window.CabinetBuilder.rebuildAllCabinetsFromState) {
+      CabinetBuilder.rebuildAllCabinetsFromState();
+    }
+
+    if (window.CabinetUI && window.CabinetUI.updateCabinetList) {
+      CabinetUI.updateCabinetList();
+    }
+  }
+
+  function _showDeleteConfirmation(cabinetIdx) {
+    const cabinet = Cabinet.cabinets[cabinetIdx];
+    if (!cabinet) return;
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:10001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.25);';
+
+    const dlg = document.createElement('div');
+    dlg.style.cssText = 'background:#fff;border-radius:10px;padding:24px 28px;box-shadow:0 8px 32px rgba(0,0,0,.18);min-width:320px;font-family:Mont,sans-serif;';
+
+    const title = document.createElement('div');
+    title.textContent = 'Delete cabinet';
+    title.style.cssText = 'font-size:15px;font-weight:600;margin-bottom:12px;color:#1a1a1a;';
+
+    const msg = document.createElement('div');
+    msg.textContent = `Are you sure you want to delete this cabinet? This action cannot be undone.`;
+    msg.style.cssText = 'font-size:13px;color:#666;margin-bottom:20px;line-height:1.4;';
+
+    const btns = document.createElement('div');
+    btns.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+
+    const btnCancel = document.createElement('button');
+    btnCancel.textContent = 'Cancel';
+    btnCancel.style.cssText = 'padding:7px 16px;border:1px solid #d0d0d0;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;';
+    btnCancel.onclick = () => overlay.remove();
+
+    const btnDelete = document.createElement('button');
+    btnDelete.textContent = 'Delete';
+    btnDelete.style.cssText = 'padding:7px 16px;border:none;border-radius:6px;background:#c0392b;color:#fff;cursor:pointer;font-size:13px;font-weight:600;';
+    btnDelete.onclick = () => {
+      _deleteCabinet(cabinetIdx);
+      overlay.remove();
+    };
+
+    btns.appendChild(btnCancel);
+    btns.appendChild(btnDelete);
+    dlg.appendChild(title);
+    dlg.appendChild(msg);
+    dlg.appendChild(btns);
+    overlay.appendChild(dlg);
+    document.body.appendChild(overlay);
+  }
+
+  function _deleteCabinet(cabinetIdx) {
+    if (cabinetIdx < 0 || cabinetIdx >= Cabinet.cabinets.length) return;
+
+    const deletedCabinet = Cabinet.cabinets[cabinetIdx];
+    const deletedRowIdx = deletedCabinet.rowIdx;
+    const deletedXOffset = deletedCabinet.xOffset;
+    const deletedWidthMM = parseInt(deletedCabinet.code.split('-')[2].slice(0, 2)) * 100;
+
+    // Remove the cabinet
+    Cabinet.cabinets.splice(cabinetIdx, 1);
+
+    // Shift remaining cabinets in the same row to the left
+    for (const cab of Cabinet.cabinets) {
+      if (cab.rowIdx === deletedRowIdx && cab.xOffset > deletedXOffset) {
+        cab.xOffset -= deletedWidthMM;
+      }
+    }
+
+    // Rebuild the scene
+    if (window.CabinetBuilder && window.CabinetBuilder.rebuildAllCabinetsFromState) {
+      CabinetBuilder.rebuildAllCabinetsFromState();
+    }
+
+    if (window.CabinetUI && window.CabinetUI.updateCabinetList) {
+      CabinetUI.updateCabinetList();
+    }
+  }
+
   function _rotateAccessory(idx) {
-    _placed[idx].mesh.rotation.z += Math.PI;
+    _placed[idx].rotated = !_placed[idx].rotated;
+    _placed[idx].mesh.rotation.z = _placed[idx].rotated ? Math.PI : 0;
   }
 
   function _removeAccessory(idx) {
@@ -206,24 +444,30 @@ window.CabinetDrag = (function () {
   function _onCanvasDown(e) {
     if (e.button !== 0 || _dragging) return;
 
-    // In slide mode: any click finalizes the current slide
-    if (_slidingIdx >= 0) {
-      e.stopPropagation();
-      e.preventDefault();
-      _finishSlide();
+    // Check click on confirmed-cabinet highlight mat
+    const matIdx = _hitHighlightMat(e.clientX, e.clientY);
+    if (matIdx >= 0) {
+      e.stopPropagation(); e.preventDefault();
+      if (window.switchToCabinetEdit) switchToCabinetEdit(matIdx);
       return;
     }
 
     const idx = _hitPlaced(e.clientX, e.clientY);
-    if (idx < 0) return;
-    // Prevent orbit controls from starting
+
+    // Click on empty canvas → deselect
+    if (idx < 0) {
+      _deselect();
+      return;
+    }
+
     e.stopPropagation();
     e.preventDefault();
-    if (_placed[idx].accCode === SEP_HORIZ_CODE) {
-      _startSlide(idx, e.clientX, e.clientY);
-    } else {
-      _startMoveDrag(idx, e.clientX, e.clientY);
-    }
+
+    // Record mousedown position — will decide click vs drag in _onMove/_onUp
+    _mouseDownIdx  = idx;
+    _mouseDownX    = e.clientX;
+    _mouseDownY    = e.clientY;
+    _mouseDownCtrl = e.ctrlKey || _ctrlHeld;
   }
 
   function _startMoveDrag(idx, cx, cy) {
@@ -239,7 +483,7 @@ window.CabinetDrag = (function () {
 
     _ghostEl = _makeGhostLabel(_dragAcc, cx, cy);
 
-    _snapPts = CabinetBuilder.getSnapPoints(Cabinet.descriptionCode, _dragAcc, Cabinet.currentCabinetXOffset);
+    _snapPts = CabinetBuilder.getSnapPoints(Cabinet.descriptionCode, _dragAcc, Cabinet.currentCabinetXOffset, Cabinet.activeRowIdx ?? 0);
     _showMarkers();
   }
 
@@ -253,7 +497,6 @@ window.CabinetDrag = (function () {
     if (!code || !Cabinet.descriptionCode) return;
     if (!CabinetBuilder.getSnapPoints) return;
     e.preventDefault();
-    if (_slidingIdx >= 0) _cancelSlide(); // exit slide mode before starting a new drag
     _startNewDrag(code, e.clientX, e.clientY);
   }
 
@@ -263,7 +506,7 @@ window.CabinetDrag = (function () {
     _dragAcc    = accCode;
 
     _ghostEl = _makeGhostLabel(accCode, cx, cy);
-    _snapPts = CabinetBuilder.getSnapPoints(Cabinet.descriptionCode, accCode, Cabinet.currentCabinetXOffset);
+    _snapPts = CabinetBuilder.getSnapPoints(Cabinet.descriptionCode, accCode, Cabinet.currentCabinetXOffset, Cabinet.activeRowIdx ?? 0);
     _showMarkers();
     _loadGhost(accCode);
   }
@@ -272,9 +515,28 @@ window.CabinetDrag = (function () {
      Mouse move
   ══════════════════════════════════════════════════ */
   function _onMove(e) {
-    if (_slidingIdx >= 0) {
-      _updateSlide(e.clientX, e.clientY);
-    } else if (_dragging) {
+    // Pending mousedown: check if movement exceeds threshold → start drag
+    if (_mouseDownIdx >= 0 && !_dragging) {
+      const dx = e.clientX - _mouseDownX;
+      const dy = e.clientY - _mouseDownY;
+      // Show cursor hint before drag threshold is reached
+      _canvas.style.cursor = _mouseDownCtrl ? 'copy' : 'grabbing';
+      if (dx * dx + dy * dy > DRAG_THRESHOLD * DRAG_THRESHOLD) {
+        const idx = _mouseDownIdx;
+        const isCtrl = _mouseDownCtrl;
+        _mouseDownIdx  = -1;
+        _mouseDownCtrl = false;
+        _deselect();
+        if (isCtrl) {
+          _startNewDrag(_placed[idx].accCode, e.clientX, e.clientY);
+          _canvas.style.cursor = 'copy';
+        } else {
+          _startMoveDrag(idx, e.clientX, e.clientY);
+        }
+      }
+      return;
+    }
+    if (_dragging) {
       _moveGhostLabel(e.clientX, e.clientY);
       _updateSnap(e.clientX, e.clientY);
     } else {
@@ -337,6 +599,11 @@ window.CabinetDrag = (function () {
   }
 
   /* ══════════════════════════════════════════════════
+     Selection
+  ══════════════════════════════════════════════════ */
+  function _deselect() { /* no-op: kept for call sites, no visual state */ }
+
+  /* ══════════════════════════════════════════════════
      Hover highlight (when not dragging)
   ══════════════════════════════════════════════════ */
   function _updateHover(cx, cy) {
@@ -344,6 +611,22 @@ window.CabinetDrag = (function () {
     const inCanvas = cx >= rect.left && cx <= rect.right
                   && cy >= rect.top  && cy <= rect.bottom;
 
+    const matIdx = inCanvas ? _hitHighlightMat(cx, cy) : -1;
+    if (matIdx >= 0) {
+      if (!_hoveredMat) {
+        _hoveredMat = true;
+        _canvas.style.cursor = 'pointer';
+        if (_hoveredIdx >= 0 && _hoveredIdx < _placed.length) {
+          _setPlacedOpacity(_placed[_hoveredIdx].mesh, OPACITY_PLACED);
+          _hoveredIdx = -1;
+        }
+      }
+      return;
+    }
+    if (_hoveredMat) {
+      _hoveredMat = false;
+      _canvas.style.cursor = '';
+    }
     const idx = inCanvas ? _hitPlaced(cx, cy) : -1;
     if (idx === _hoveredIdx) return;
 
@@ -354,7 +637,7 @@ window.CabinetDrag = (function () {
     // Highlight new
     if (idx >= 0) {
       _setPlacedOpacity(_placed[idx].mesh, OPACITY_HOVER);
-      _canvas.style.cursor = _placed[idx].accCode === SEP_HORIZ_CODE ? 'ew-resize' : 'grab';
+      _canvas.style.cursor = _ctrlHeld ? 'copy' : 'grab';
     } else {
       _canvas.style.cursor = '';
     }
@@ -365,7 +648,12 @@ window.CabinetDrag = (function () {
      Mouse up / drop
   ══════════════════════════════════════════════════ */
   function _onUp() {
-    if (_slidingIdx >= 0) return; // slide is click-to-enter / click-to-exit, not hold-and-drag
+    // Pending mousedown released without moving → click, nothing to do
+    if (_mouseDownIdx >= 0) {
+      _mouseDownIdx  = -1;
+      _mouseDownCtrl = false;
+      return;
+    }
     if (!_dragging) return;
 
     if (_movingIdx >= 0) {
@@ -384,12 +672,6 @@ window.CabinetDrag = (function () {
       p.mesh.position.copy(snap.position);
       p.snapId = snap.id;
       Cabinet.placedAccessories[_movingIdx].snapId = snap.id;
-      // Reset slide offset — new snap point is the new anchor at offset 0
-      if (p.accCode === SEP_HORIZ_CODE) {
-        p.slideOffset = 0;
-        if (Cabinet.placedAccessories[_movingIdx])
-          Cabinet.placedAccessories[_movingIdx].slideOffset = 0;
-      }
     } else {
       // Cancelled — restore original position
       p.mesh.position.copy(_moveOriginPos);
@@ -408,6 +690,12 @@ window.CabinetDrag = (function () {
   /* ══════════════════════════════════════════════════
      New placement
   ══════════════════════════════════════════════════ */
+  // Row Y-rotation for a given rowIdx (mirrors _rowRotY in cabinet-builder.js)
+  function _rowRotY(rowIdx) {
+    const row = Cabinet.rows?.[rowIdx ?? 0] ?? { angle: 0, flipped: false };
+    return row.angle * (Math.PI / 2) + (row.flipped ? Math.PI : 0);
+  }
+
   async function _placeAccessory(accCode, snap) {
     const Loader = THREE.GLTFLoader || window.GLTFLoader;
     if (!Loader) return;
@@ -422,11 +710,11 @@ window.CabinetDrag = (function () {
           { color: COLOR_PLACED, transparent: true, opacity: OPACITY_PLACED });
       });
       mesh.position.copy(snap.position);
+      mesh.rotation.y = _rowRotY(Cabinet.activeRowIdx ?? 0);
       mesh.userData.isPlaced = true;
       _scene.add(mesh);
-      const slideOffset = accCode === SEP_HORIZ_CODE ? 0 : undefined;
-      _placed.push({ accCode, snapId: snap.id, mesh, slideOffset, rotated: false });
-      Cabinet.placedAccessories.push({ code: accCode, snapId: snap.id, slideOffset });
+      _placed.push({ accCode, snapId: snap.id, mesh, rotated: false });
+      Cabinet.placedAccessories.push({ code: accCode, snapId: snap.id });
       if (window.CabinetUI) CabinetUI.rebuildBOM();
     } catch (e) {
       console.warn('[CabinetDrag] Could not place accessory:', e.message);
@@ -434,132 +722,15 @@ window.CabinetDrag = (function () {
   }
 
   /* ══════════════════════════════════════════════════
-     Slide mode (EZR_SEP_PLT-4U-horiz)
-  ══════════════════════════════════════════════════ */
-  function _startSlide(idx, cx, cy) {
-    const mesh = _placed[idx].mesh;
-
-    _slidingIdx   = idx;
-    _slideNowMM   = _placed[idx].slideOffset || 0;
-    _slideLastCX  = cx;
-    // Anchor X = mesh X minus the currently stored offset
-    _slideOriginX = mesh.position.x - _slideNowMM * MM;
-
-    // Compute signed screen pixels per 1 mm (preserves direction relative to camera).
-    // Using 100 mm span for better precision at any zoom level.
-    const rect = _canvas.getBoundingClientRect();
-    const p1 = new THREE.Vector3(_slideOriginX - 50 * MM, mesh.position.y, mesh.position.z);
-    const p2 = new THREE.Vector3(_slideOriginX + 50 * MM, mesh.position.y, mesh.position.z);
-    const s1 = _worldToScreen(p1, rect);
-    const s2 = _worldToScreen(p2, rect);
-    // Signed: positive → world +X projects to screen right; negative → flipped
-    _slidePxPerMM = (s2.x - s1.x) / 100;
-    // Guard against degenerate camera angles (|ratio| < 0.1 px/mm)
-    if (Math.abs(_slidePxPerMM) < 0.1) _slidePxPerMM = 0.5;
-
-    _slideCanDrop = true;
-    _setPlacedOpacity(mesh, 0.35);
-    _placed[idx].mesh.traverse(c => { if (c.isMesh) c.material.color.setHex(COLOR_PLACED); });
-    _canvas.style.cursor = 'ew-resize';
-    _showSlideMarkers(mesh.position.y, mesh.position.z);
-  }
-
-  function _updateSlide(cx, cy) {
-    // Incremental delta — works correctly whether button is held or not
-    const deltaMM = (cx - _slideLastCX) / _slidePxPerMM;
-    _slideLastCX  = cx;
-    _slideNowMM  += deltaMM;
-
-    // Exceeded detach threshold → break free, enter regular move drag
-    if (Math.abs(_slideNowMM) > SLIDE_DETACH) {
-      const idx = _slidingIdx;
-      // Park mesh at the limit, clear offset — _finishMove will set a fresh anchor
-      _placed[idx].mesh.position.x = _slideOriginX + ((_slideNowMM > 0 ? 1 : -1) * SLIDE_MAX_MM) * MM;
-      _placed[idx].slideOffset = 0;
-      if (Cabinet.placedAccessories[idx])
-        Cabinet.placedAccessories[idx].slideOffset = 0;
-      _hideSlideMarkers();
-      _slidingIdx = -1;
-      _canvas.style.cursor = '';
-      _setPlacedOpacity(_placed[idx].mesh, OPACITY_PLACED);
-      _startMoveDrag(idx, cx, cy);
-      return;
-    }
-
-    const clampedMM = Math.max(-SLIDE_MAX_MM, Math.min(SLIDE_MAX_MM, _slideNowMM));
-    _placed[_slidingIdx].mesh.position.x = _slideOriginX + clampedMM * MM;
-
-    // Collision check
-    _slideCanDrop = _checkSlideCollision(_slidingIdx);
-    _placed[_slidingIdx].mesh.traverse(c => {
-      if (c.isMesh) c.material.color.setHex(_slideCanDrop ? COLOR_PLACED : COLOR_BLOCK);
-    });
-
-    // Limit markers: red near edge or when collision
-    const nearLimit = Math.abs(clampedMM) > SLIDE_MAX_MM * 0.8;
-    _slideMarkers.forEach(m => m.material.color.setHex(
-      (!_slideCanDrop || nearLimit) ? 0xef4444 : 0xf59e0b));
-  }
-
-  function _finishSlide() {
-    if (_slidingIdx < 0) return;
-    // Block placement when in collision — cancel instead
-    if (!_slideCanDrop) { _cancelSlide(); return; }
-    const idx = _slidingIdx;
-    const clampedMM = Math.max(-SLIDE_MAX_MM, Math.min(SLIDE_MAX_MM, _slideNowMM));
-    _placed[idx].mesh.position.x = _slideOriginX + clampedMM * MM;
-    _placed[idx].slideOffset = clampedMM;
-    if (Cabinet.placedAccessories[idx])
-      Cabinet.placedAccessories[idx].slideOffset = clampedMM;
-    _setPlacedOpacity(_placed[idx].mesh, OPACITY_PLACED);
-    _placed[idx].mesh.traverse(c => { if (c.isMesh) c.material.color.setHex(COLOR_PLACED); });
-    _hideSlideMarkers();
-    _slideCanDrop = true;
-    _slidingIdx = -1;
-    _canvas.style.cursor = '';
-  }
-
-  function _cancelSlide() {
-    if (_slidingIdx < 0) return;
-    const idx = _slidingIdx;
-    // Restore to the offset that was stored before entering slide mode
-    const storedMM = _placed[idx].slideOffset || 0;
-    _placed[idx].mesh.position.x = _slideOriginX + storedMM * MM;
-    _placed[idx].mesh.traverse(c => { if (c.isMesh) c.material.color.setHex(COLOR_PLACED); });
-    _setPlacedOpacity(_placed[idx].mesh, OPACITY_PLACED);
-    _hideSlideMarkers();
-    _slideCanDrop = true;
-    _slidingIdx = -1;
-    _canvas.style.cursor = '';
-  }
-
-  function _showSlideMarkers(worldY, worldZ) {
-    const geo = _mkGeo();
-    for (const sign of [-1, 1]) {
-      const mat = new THREE.MeshBasicMaterial(
-        { color: 0xf59e0b, transparent: true, opacity: 0.75, depthTest: false });
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(_slideOriginX + sign * SLIDE_MAX_MM * MM, worldY, worldZ);
-      m.renderOrder = 5;
-      _scene.add(m);
-      _slideMarkers.push(m);
-    }
-  }
-
-  function _hideSlideMarkers() {
-    for (const m of _slideMarkers) { m.material.dispose(); _scene.remove(m); }
-    _slideMarkers = [];
-  }
-
-  /* ══════════════════════════════════════════════════
      End drag cleanup
   ══════════════════════════════════════════════════ */
   function _endDrag() {
-    _dragging  = false;
-    _dragAcc   = null;
-    _nearIdx   = -1;
-    _canDrop   = false;
-    _hoveredIdx = -1;
+    _dragging     = false;
+    _dragAcc      = null;
+    _nearIdx      = -1;
+    _canDrop      = false;
+    _hoveredIdx   = -1;
+    _mouseDownIdx = -1;
     _canvas.style.cursor = '';
 
     if (_ghostEl)   { _ghostEl.remove();          _ghostEl   = null; }
@@ -571,26 +742,6 @@ window.CabinetDrag = (function () {
   /* ══════════════════════════════════════════════════
      Collision detection
   ══════════════════════════════════════════════════ */
-  // Collision check for slide mode — tests current mesh position against everything else
-  function _checkSlideCollision(slidingIdx) {
-    const mesh = _placed[slidingIdx].mesh;
-    mesh.updateWorldMatrix(true, true);
-    const box = new THREE.Box3().setFromObject(mesh);
-
-    const boxes = [];
-    _scene.traverse(obj => {
-      if (obj.userData.isAccessory) boxes.push(new THREE.Box3().setFromObject(obj));
-    });
-    for (const p of _lockedPlaced) {
-      boxes.push(new THREE.Box3().setFromObject(p.mesh));
-    }
-    for (let i = 0; i < _placed.length; i++) {
-      if (i === slidingIdx) continue; // skip self
-      boxes.push(new THREE.Box3().setFromObject(_placed[i].mesh));
-    }
-    return !boxes.some(b => b.intersectsBox(box));
-  }
-
   function _checkCollision(idx) {
     const activeMesh = _movingIdx >= 0 ? _placed[_movingIdx].mesh : _ghostMesh;
     if (!activeMesh) return true;
@@ -598,6 +749,8 @@ window.CabinetDrag = (function () {
     activeMesh.position.copy(_snapPts[idx].position);
     activeMesh.updateWorldMatrix(true, true);
     const box = new THREE.Box3().setFromObject(activeMesh);
+    // Deflate by 2 mm to avoid false collisions from merely touching faces
+    box.expandByScalar(-0.002);
 
     return !_occupiedBoxes().some(b => b.intersectsBox(box));
   }
@@ -652,6 +805,7 @@ window.CabinetDrag = (function () {
         if (c.isMesh) c.material = new THREE.MeshStandardMaterial(
           { color: COLOR_GHOST, transparent: true, opacity: OPACITY_MOVING });
       });
+      _ghostMesh.rotation.y = _rowRotY(Cabinet.activeRowIdx ?? 0);
       _ghostMesh.visible = false;
       _scene.add(_ghostMesh);
     } catch { /* ghost is optional */ }
@@ -660,6 +814,19 @@ window.CabinetDrag = (function () {
   /* ══════════════════════════════════════════════════
      Raycast helpers
   ══════════════════════════════════════════════════ */
+  function _hitHighlightMat(cx, cy) {
+    const rect = _canvas.getBoundingClientRect();
+    _raycaster.setFromCamera({
+      x:  ((cx - rect.left) / rect.width)  * 2 - 1,
+      y: -((cy - rect.top)  / rect.height) * 2 + 1,
+    }, _camera);
+    const mats = [];
+    _scene.traverse(obj => { if (obj.userData.isHighlightMat) mats.push(obj); });
+    const hits = _raycaster.intersectObjects(mats, false);
+    if (!hits.length) return -1;
+    return hits[0].object.userData.cabinetIdx ?? -1;
+  }
+
   function _hitPlaced(cx, cy) {
     if (!_placed.length) return -1;
     const rect = _canvas.getBoundingClientRect();
@@ -713,5 +880,122 @@ window.CabinetDrag = (function () {
     mesh.traverse(c => { if (c.isMesh) c.material.opacity = opacity; });
   }
 
-  return { init, clear, clearAll, finalizeCurrent };
+  // Restore accessories of a previously confirmed cabinet back to editable state.
+  // Call from cabinet-ui.js after auto-finalizing the current cabinet.
+  // Compute start index in _lockedPlaced for a given cabinet index.
+  // Skips editingIdx because its accessories live in _placed, not _lockedPlaced.
+  function _lockedStart(cabinetIdx) {
+    const editingIdx = Cabinet.editingIdx ?? -1;
+    let start = 0;
+    for (let i = 0; i < cabinetIdx; i++) {
+      if (i === editingIdx) continue;
+      start += Cabinet.cabinets[i]?.placedAccessories?.length || 0;
+    }
+    return start;
+  }
+
+  // Save current _placed back into _lockedPlaced at the correct position for editingIdx.
+  // Makes accessories opaque (locked appearance).
+  function saveEditBack(editingIdx) {
+    if (window.CabinetBuilder) CabinetBuilder.clearHighlight();
+    for (const p of _placed) {
+      p.mesh.traverse(c => {
+        if (!c.isMesh) return;
+        if (c.userData.origMat) {
+          c.material = c.userData.origMat;
+          c.material.transparent = false;
+          c.material.opacity = 1.0;
+          c.material.needsUpdate = true;
+        } else {
+          c.material.transparent = false;
+          c.material.opacity = 1.0;
+          c.material.needsUpdate = true;
+        }
+      });
+    }
+    const start = _lockedStart(editingIdx);
+    _lockedPlaced.splice(start, 0, ..._placed);
+    _placed = [];
+    Cabinet.placedAccessories = [];
+  }
+
+  // Pull accessories for cabinet idx from _lockedPlaced into _placed,
+  // restoring green (editable) material.
+  function loadForEdit(idx) {
+    const start = _lockedStart(idx);
+    const count = Cabinet.cabinets[idx]?.placedAccessories?.length || 0;
+    const entries = _lockedPlaced.splice(start, count);
+    for (const p of entries) {
+      p.mesh.traverse(c => {
+        if (!c.isMesh) return;
+        if (!c.userData.origMat) c.userData.origMat = c.material;
+        c.material = new THREE.MeshStandardMaterial(
+          { color: COLOR_PLACED, transparent: true, opacity: OPACITY_PLACED });
+      });
+      _placed.push(p);
+    }
+    Cabinet.placedAccessories = _placed.map(p => ({
+      code: p.accCode, snapId: p.snapId,
+    }));
+  }
+
+  // Shift locked accessories for a single cabinet index by deltaMM along X.
+  // If singleIdx=true, only shifts cabinet at fromIdx (not a range).
+  function shiftLockedPlaced(fromIdx, deltaMM, singleIdx = false) {
+    const dx = deltaMM * MM;
+    const editingIdx = Cabinet.editingIdx ?? -1;
+    let start = 0;
+    for (let i = 0; i < Cabinet.cabinets.length; i++) {
+      if (i === editingIdx) continue; // its accessories are in _placed, not _lockedPlaced
+      const count = Cabinet.cabinets[i]?.placedAccessories?.length || 0;
+      const matches = singleIdx ? (i === fromIdx) : (i >= fromIdx);
+      if (matches) {
+        for (let j = start; j < start + count; j++) {
+          if (_lockedPlaced[j]) _lockedPlaced[j].mesh.position.x += dx;
+        }
+      }
+      start += count;
+    }
+  }
+
+  // Recompute world positions of all placed accessory meshes after a row
+  // origin/angle/flip change. Iterates locked + active-editing accessories.
+  function rebuildAllAccessories() {
+    const editingIdx = Cabinet.editingIdx ?? -1;
+
+    // Helper: reposition + reorient one entry using its cabinet's snap points
+    function _repositionEntry(entry, cabinetIdx) {
+      const cab = Cabinet.cabinets[cabinetIdx];
+      if (!cab) return;
+      const rowIdx = cab.rowIdx ?? 0;
+      const snaps  = CabinetBuilder.getSnapPoints(cab.code, entry.accCode, cab.xOffset, rowIdx);
+      const snap   = snaps.find(s => s.id === entry.snapId);
+      if (!snap) return;
+
+      // Update position
+      entry.mesh.position.copy(snap.position);
+
+      // Update rotation: row Y-rotation + preserve Z-flip (rotated flag)
+      entry.mesh.rotation.y = _rowRotY(rowIdx);
+      entry.mesh.rotation.z = entry.rotated ? Math.PI : 0;
+    }
+
+    // Locked accessories (all confirmed cabinets except the one being edited)
+    let lockedCursor = 0;
+    for (let i = 0; i < Cabinet.cabinets.length; i++) {
+      if (i === editingIdx) continue;
+      const count = Cabinet.cabinets[i]?.placedAccessories?.length || 0;
+      for (let j = 0; j < count; j++) {
+        _repositionEntry(_lockedPlaced[lockedCursor + j], i);
+      }
+      lockedCursor += count;
+    }
+
+    // Active (editing) accessories
+    for (const entry of _placed) {
+      if (editingIdx >= 0) _repositionEntry(entry, editingIdx);
+    }
+  }
+
+  return { init, clear, clearAll, finalizeCurrent, saveEditBack, loadForEdit, shiftLockedPlaced, rebuildAllAccessories };
 })();

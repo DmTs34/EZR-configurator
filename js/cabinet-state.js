@@ -1,7 +1,7 @@
 /**
  * cabinet-state.js
  * Global state object for the cabinet configurator.
- * Kept separate from window.App (mounting plate configurator state).
+ *
  */
 window.Cabinet = {
 
@@ -21,10 +21,18 @@ window.Cabinet = {
   mountingPlates: [],
   // Each entry: { id, name, accessoryCount, exportedConfig: {...} }
 
+  /* ── Rows (groups of cabinets, each with its own arrow) ── */
+  rows: [
+    { id: 0, origin: { x: 0, z: 0 }, angle: 0, flipped: false }
+  ],
+  // Each entry: { id, origin: {x, z} (mm), angle: 0|1 }
+  activeRowIdx: 0,             // index into rows[] — new cabinets go into this row
+
   /* ── Multi-cabinet row ────────────────────────────── */
   cabinets: [],
-  // Each confirmed entry: { code, xOffset, placedAccessories: [{code, snapId}] }
-  currentCabinetXOffset: 0,  // mm, X start of cabinet being configured
+  // Each confirmed entry: { code, xOffset, rowIdx, placedAccessories: [{code, snapId}] }
+  currentCabinetXOffset: 0,  // mm, X start of cabinet being configured (for active row)
+  editingIdx: -1,            // index of cabinet being edited, or -1 for new cabinet
 
   /* ── BOM ──────────────────────────────────────────── */
   bom: [],

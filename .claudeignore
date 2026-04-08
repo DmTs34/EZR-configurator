@@ -1,0 +1,5 @@
+# This file specifies files and directories that should be ignored by the Claude system.
+
+
+# Build artifacts
+node_modules/

@@ -18,7 +18,7 @@
 
 // Set to false to hide the points editor panel and camera statusbar,
 // showing only the 3D scene in the preview modal.
-window.PreviewPointsEditVisible = false;
+window.PreviewPointsEditVisible = true;
 
 window.PreviewCablesConfig = {
 
@@ -93,11 +93,42 @@ window.PreviewCablesConfig = {
   // Keys: 'preset_' + DE code. Camera is not set — _autoFit() handles framing.
 
   'preset_06LR0': {
-    animation: { enabled: true, mode: 'sequential', duration: 0.5 },
-    cables: [
-      { color: '#65b8a5', radius: 4, tubularSegments: 48, radialSegments: 6, points: [ { x: 0, y: 2100, z: 18 }, { x: 0, y: 50, z: 18 } ] },
-    ],
+  "camera": {
+    "theta": 33.17,
+    "phi": 63.25,
+    "radius": 2.7616,
+    "target": {
+      "x": 0.3009,
+      "y": 1.1836,
+      "z": 0.1062
+    }
   },
+  "animation": {
+    "enabled": true,
+    "mode": "sequential",
+    "duration": 0.5
+  },
+  "cables": [
+    {
+      "color": "#65b8a5",
+      "radius": 4,
+      "tubularSegments": 48,
+      "radialSegments": 6,
+      "points": [
+        {
+          "x": 0,
+          "y": 2100,
+          "z": 18
+        },
+        {
+          "x": 0,
+          "y": 50,
+          "z": 18
+        }
+      ]
+    }
+  ]
+},
 
   'preset_09STL': {
     camera:    { theta: 29.05, phi: 75.18, radius: 2.8228, target: { x: 0.5855, y: 1.1318, z: 0.2575 } },

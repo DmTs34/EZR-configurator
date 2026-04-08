@@ -79,8 +79,7 @@
     scene.add(rim);
 
     /* Grid */
-    Cabinet.gridHelper = new THREE.GridHelper(6, 10, 0xd0d0d0, 0xe8e8e8);
-    scene.add(Cabinet.gridHelper);
+    window.dispatchEvent(new CustomEvent('cabinetSceneReady'));
 
     /* Controls & gizmo */
     CabinetControls.init(camera, renderer);
@@ -120,6 +119,8 @@
       }
       renderer.render(scene, _orthoActive ? orthoCamera : camera);
       _renderGizmo();
+      if (window.CabinetBuilder) CabinetBuilder.updateLabelOverlays();
+      if (window.CabinetArrow)   CabinetArrow.updateLabels();
     })();
 
     /* Ortho toggle — exposed via CabinetCamera */
@@ -136,6 +137,9 @@
     /* Drag-and-drop accessory placement */
     if (window.CabinetDrag) CabinetDrag.init(canvas, scene, camera);
 
+    /* Row-origin arrow */
+    if (window.CabinetArrow) CabinetArrow.init(canvas, scene, camera);
+
     /* Done – hide loading overlay */
     const overlay = document.getElementById('viewportLoading');
     if (overlay) overlay.style.display = 'none';
@@ -144,7 +148,7 @@
   /* ── Orbit controls ─────────────────────────────── */
   window.CabinetControls = (function () {
     let cam, canvasEl;
-    let theta = 0.5, phi = 1.1, radius = 3.0;
+    let theta = 36.0 * Math.PI / 180, phi = 86.2 * Math.PI / 180, radius = 5.240;
     let target;   // initialised inside init() — THREE must be loaded first
     let drag = false, panMode = false, panStart = null;
     let lastX = 0, lastY = 0;
@@ -163,7 +167,7 @@
     function init(camera, renderer) {
       cam      = camera;
       canvasEl = renderer.domElement;
-      target   = new THREE.Vector3(0, 0.9, 0);
+      target   = new THREE.Vector3(0.450, 1.092, 0.152);
 
       canvasEl.addEventListener('mousedown', e => {
         if (e.button === 2) {

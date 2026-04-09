@@ -16,6 +16,7 @@ window.CabinetFloor = (function () {
 
   /* ── Module state ─────────────────────────────────────────────────────── */
   let _floorGrid        = null;
+  let _originSphere     = null;
   let _floorGridLeftCol = -2;    // Current left column (dynamically updated)
   let _floorGridRightCol = 1;    // Current right column (dynamically updated) - 4 cols
   let _floorGridMinRow  = -1;    // Current front row (dynamically updated)
@@ -79,11 +80,20 @@ window.CabinetFloor = (function () {
     }
 
     Cabinet.scene.add(_floorGrid);
+
+    // Add origin marker (red sphere at 0,0,0)
+    const sphereGeo = new THREE.SphereGeometry(0.025, 16, 16);
+    const sphereMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    _originSphere = new THREE.Mesh(sphereGeo, sphereMat);
+    _originSphere.position.set(0, 0, 0);
+    _originSphere.userData.isOriginMarker = true;
+    Cabinet.scene.add(_originSphere);
   }
 
   /* ── Visibility control ───────────────────────────────────────────────── */
   function setVisible(v) {
     if (_floorGrid) _floorGrid.visible = v;
+    if (_originSphere) _originSphere.visible = v;
   }
 
   /* ── Bounds calculation ───────────────────────────────────────────────── */

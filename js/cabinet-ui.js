@@ -1820,8 +1820,12 @@ async function _captureAccThumb(code, cam = {}) {
   camera.updateProjectionMatrix();
   rdr.setSize(W, H, false);
   CabinetFloor.setVisible(false);
+  if (window.CabinetArrow) CabinetArrow.setVisible(false);
+  CabinetBuilder.setHighlightsVisible(false);
   rdr.render(scene, camera);
   CabinetFloor.setVisible(true);
+  if (window.CabinetArrow) CabinetArrow.setVisible(true);
+  CabinetBuilder.setHighlightsVisible(true);
   const dataURL = rdr.domElement.toDataURL('image/jpeg', 0.88);
 
   // Restore renderer size
@@ -2034,8 +2038,12 @@ async function _capturePresetThumb(code, cam = {}) {
   camera.updateProjectionMatrix();
   rdr.setSize(W, H, false);
   CabinetFloor.setVisible(false);
+  if (window.CabinetArrow) CabinetArrow.setVisible(false);
+  CabinetBuilder.setHighlightsVisible(false);
   rdr.render(scene, camera);
   CabinetFloor.setVisible(true);
+  if (window.CabinetArrow) CabinetArrow.setVisible(true);
+  CabinetBuilder.setHighlightsVisible(true);
   const dataURL = rdr.domElement.toDataURL('image/jpeg', 0.88);
 
   // Restore renderer
@@ -2050,8 +2058,17 @@ function renderSnapshot() {
   const rdr = Cabinet.renderer;
   if (!rdr) { showToast('Nothing to render', 'error'); return; }
 
+  CabinetFloor.setVisible(false);
+  if (window.CabinetArrow) CabinetArrow.setVisible(false);
+  CabinetBuilder.setHighlightsVisible(false);
+
   rdr.render(Cabinet.scene, Cabinet.camera);
   const dataURL = rdr.domElement.toDataURL('image/png');
+
+  CabinetFloor.setVisible(true);
+  if (window.CabinetArrow) CabinetArrow.setVisible(true);
+  CabinetBuilder.setHighlightsVisible(true);
+
   const a = Object.assign(document.createElement('a'), {
     href: dataURL,
     download: `${(Cabinet.projectName || 'Cabinet').replace(/\s+/g, '-')}_render.png`,
@@ -2378,6 +2395,25 @@ function _overlapsConfirmed(xMM, widthMM, skipIdx = -1) {
   return false;
 }
 
+/* ── Accessories → Chassis transition ──────────────────────────────── */
+function onGoToChassisStep() {
+  if (!Cabinet.isCodeValid || !Cabinet.descriptionCode || Cabinet.editingIdx < 0) {
+    showToast('Configure a cabinet first', 'error');
+    return;
+  }
+
+  activateStep('stepChassis');
+  completeStep('step3');
+
+  const el = document.getElementById('stepChassis');
+  if (el) el.scrollIntoView({ behavior: 'smooth' });
+
+  if (window.CabinetChassis) {
+    CabinetChassis.renderCards();
+    CabinetChassis.renderThumbs();
+  }
+}
+
 function onReadyClick() {
   if (!Cabinet.isCodeValid || !Cabinet.descriptionCode || Cabinet.editingIdx < 0) {
     showToast('Configure a cabinet first', 'error'); return;
@@ -2391,7 +2427,8 @@ function onReadyClick() {
     return;
   }
 
-  // Finalize accessories (make opaque, push to _lockedPlaced)
+  // Finalize chassis and accessories
+  if (window.CabinetChassis) CabinetChassis.finalizeCurrent();
   if (window.CabinetDrag) CabinetDrag.finalizeCurrent();
 
   // Advance currentCabinetXOffset to right edge of the whole row
@@ -2431,7 +2468,8 @@ async function switchToCabinetEdit(idx) {
   if (Cabinet.editingIdx >= 0) {
     const prevIdx = Cabinet.editingIdx;
     // State is already up to date (accessories synced on every add/remove)
-    if (window.CabinetDrag) CabinetDrag.saveEditBack(prevIdx);
+    if (window.CabinetDrag)    CabinetDrag.saveEditBack(prevIdx);
+    if (window.CabinetChassis) CabinetChassis.saveEditBack(prevIdx);
     CabinetBuilder.lockAssembly();
     const pp = CabinetBuilder.parseCode(Cabinet.cabinets[prevIdx].code);
     if (pp) CabinetBuilder.showLockedHighlight(Cabinet.cabinets[prevIdx].xOffset, pp.widthMM, prevIdx, Cabinet.cabinets[prevIdx].rowIdx ?? 0);
@@ -2455,8 +2493,9 @@ async function switchToCabinetEdit(idx) {
   // Switch active row to match the cabinet being edited
   Cabinet.activeRowIdx = cab.rowIdx ?? 0;
 
-  // Move accessories from _lockedPlaced → _placed, restore green material
-  if (window.CabinetDrag) CabinetDrag.loadForEdit(idx);
+  // Move accessories/chassis from _lockedPlaced → _placed, restore green material
+  if (window.CabinetDrag)    CabinetDrag.loadForEdit(idx);
+  if (window.CabinetChassis) CabinetChassis.loadForEdit(idx);
 
   // Remove locked assembly and highlight from scene — build() will create a fresh one
   CabinetBuilder.unlockAssembly(idx);
@@ -2481,7 +2520,7 @@ async function switchToCabinetEdit(idx) {
 }
 
 function _resetForNextCabinet() {
-  ['step1','step3','step4'].forEach(id => {
+  ['step1','step3','stepChassis','step4'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.classList.remove('completed');
@@ -2489,6 +2528,7 @@ function _resetForNextCabinet() {
     if (id === 'step4' && Cabinet.cabinets.length > 0) return;
     if (id !== 'step1') el.classList.add('locked', 'collapsed');
   });
+  if (window.CabinetChassis) CabinetChassis.clear();
   _resetCodeState();
   _expandStep1?.();
 }
@@ -2583,6 +2623,20 @@ window.exportAllThumbs = async function (cam = {}) {
     }
   }
 
+  // ── Chassis thumbnails ──────────────────────────────
+  console.log('[exportAllThumbs] Chassis…');
+  if (window.CabinetChassis) {
+    for (const c of CabinetChassis.CHASSIS_CATALOG) {
+      try {
+        console.log(`  chassis: ${c.code}`);
+        const dataURL = await CabinetChassis.captureThumb(c.code, cam);
+        results.push({ type: 'chassis', code: c.code, dataURL });
+      } catch (e) {
+        console.warn(`  FAILED chassis: ${c.code}`, e.message);
+      }
+    }
+  }
+
   CabinetBuilder.clearAssembly({ noFade: true });
   console.log(`[exportAllThumbs] Done — ${results.length} thumbnails`);
   return results;
@@ -2597,8 +2651,8 @@ Object.assign(window, {
   openModal, closeModal, showToast,
   // Presets
   togglePresetGallery, selectPreset,
-  // Accessories
-  useEZRConfig, onReadyClick,
+  // Accessories & Chassis
+  useEZRConfig, onGoToChassisStep, onReadyClick,
   // Preview modal
   openPreview, closePreview,
   // Door controls

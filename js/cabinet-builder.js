@@ -1839,6 +1839,9 @@ window.CabinetBuilder = (function () {
     if (window.CabinetDrag?.rebuildAllAccessories) {
       CabinetDrag.rebuildAllAccessories();
     }
+    if (window.CabinetChassis?.rebuildAllChassis) {
+      CabinetChassis.rebuildAllChassis();
+    }
   }
 
   /**
@@ -1859,6 +1862,8 @@ window.CabinetBuilder = (function () {
       _lockedAssemblies.push(group);
       showLockedHighlight(cab.xOffset, p.widthMM, i, cab.rowIdx ?? 0);
     }
+    if (window.CabinetDrag?.rebuildAllAccessories)  CabinetDrag.rebuildAllAccessories();
+    if (window.CabinetChassis?.rebuildFromState)    CabinetChassis.rebuildFromState();
   }
 
   /**
@@ -1885,6 +1890,13 @@ window.CabinetBuilder = (function () {
     _clearHighlight();
   }
 
+  function setHighlightsVisible(v) {
+    if (_highlightMesh) _highlightMesh.visible = v;
+    for (const { mesh } of _lockedHighlights) {
+      if (mesh) mesh.visible = v;
+    }
+  }
+
   return {
     build,
     clearAssembly,
@@ -1898,6 +1910,7 @@ window.CabinetBuilder = (function () {
     rebuildAllCabinetsFromState,
     buildInto,
     clearHighlight,
+    setHighlightsVisible,
     showLockedHighlight,
     removeLockedHighlight,
     clearLockedHighlights,

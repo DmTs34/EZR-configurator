@@ -332,12 +332,20 @@ window.CabinetDrag = (function () {
       accessoriesToCopy = [...cabinet.placedAccessories];
     }
 
+    let chassisToCopy = [];
+    if (Cabinet.editingIdx === cabinetIdx && Cabinet.placedChassis) {
+      chassisToCopy = [...Cabinet.placedChassis];
+    } else if (cabinet.placedChassis) {
+      chassisToCopy = [...cabinet.placedChassis];
+    }
+
     // Create a new cabinet with the same code, positioned at the end of the active row
     const newCabinet = {
       code: cabinet.code,
       xOffset: maxXEnd,
       rowIdx: targetRowIdx,
       placedAccessories: accessoriesToCopy,
+      placedChassis: chassisToCopy,
       label: `ODF #${Cabinet.cabinets.length + 1}`,
     };
 

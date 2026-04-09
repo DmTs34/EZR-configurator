@@ -101,7 +101,7 @@
         <div class="preset-cards-row" id="accGrid"></div>
 
         <div style="padding:12px 0 4px">
-          <button class="btn btn-primary btn-block" id="readyBtn" onclick="onReadyClick()">
+          <button class="btn btn-primary btn-block" id="readyBtn" onclick="onGoToChassisStep()">
             Go the next step →
           </button>
         </div>
@@ -111,14 +111,14 @@
     <!-- ══════════════════════════════════════════════
          STEP 3 — CHASSIS
     ══════════════════════════════════════════════ -->
-<div class="step collapsed locked" id="step4">
-      <div class="step-header" onclick="toggleStep('step4')">
+<div class="step collapsed locked" id="stepChassis">
+      <div class="step-header" onclick="toggleStep('stepChassis')">
         <div class="step-num">3</div>
         <div class="step-title">Chassis</div>
         <div class="step-chevron">▾</div>
       </div>
       <div class="step-content">
-        <!-- EZR accessory cards -->
+        <!-- Chassis cards -->
         <div class="preset-cards-row" id="chaGrid"></div>
         <div style="padding:12px 0 4px">
           <button class="btn btn-primary btn-block" id="readyBtn" onclick="onReadyClick()">
@@ -126,7 +126,7 @@
           </button>
         </div>
       </div>
-    </div><!-- /step3 -->
+    </div><!-- /stepChassis -->
     <!-- ══════════════════════════════════════════════
          STEP 4 — EXPORT / BOM
     ══════════════════════════════════════════════ -->
@@ -393,12 +393,14 @@
 <script src="libs/three.min.js"></script>
 <script src="libs/GLTFLoader.js"></script>
 <script src="js/cabinet-state.js"></script>
+<script src="js/cabinet-utils.js"></script>
 <script src="js/cabinet-main.js"></script>
 <script src="js/cabinet-builder.js"></script>
 <script src="js/cabinet-floor.js"></script>
 <script src="js/preview-cables.js"></script>
 <script src="js/cabinet-ui.js"></script>
 <script src="js/cabinet-drag.js"></script>
+<script src="js/cabinet-chassis.js"></script>
 <script src="js/cabinet-arrow.js"></script>
 
 </body>

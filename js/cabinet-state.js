@@ -30,7 +30,7 @@ window.Cabinet = {
 
   /* ── Multi-cabinet row ────────────────────────────── */
   cabinets: [],
-  // Each confirmed entry: { code, xOffset, rowIdx, placedAccessories: [{code, snapId}] }
+  // Each confirmed entry: { code, xOffset, rowIdx, placedAccessories: [{code, snapId}], placedChassis: [{code, slotIdx, heightU}] }
   currentCabinetXOffset: 0,  // mm, X start of cabinet being configured (for active row)
   editingIdx: -1,            // index of cabinet being edited, or -1 for new cabinet
 
@@ -41,6 +41,10 @@ window.Cabinet = {
   /* ── User-placed accessories (via drag) ───────────── */
   placedAccessories: [],
   // Each entry: { code, snapId }
+
+  /* ── User-placed chassis (via drag) ────────────────── */
+  placedChassis: [],
+  // Each entry: { code, slotIdx, heightU }
 
   /* ── Three.js objects (set by cabinet-main.js) ────── */
   scene:      null,

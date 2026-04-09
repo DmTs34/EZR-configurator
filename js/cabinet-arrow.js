@@ -606,7 +606,15 @@ window.CabinetArrow = (function () {
     }
   }
 
+  /* ── Visibility (for clean image renders) ────────── */
+  function setVisible(v) {
+    for (const entry of _arrows) {
+      if (entry?.mesh) entry.mesh.visible = v;
+    }
+    if (!v && _snapGroup) _snapGroup.visible = false;
+  }
+
   /* ── Public ───────────────────────────────────────── */
-  return { init, updateLabels, refreshActiveIndicators: _refreshActiveIndicators };
+  return { init, updateLabels, refreshActiveIndicators: _refreshActiveIndicators, setVisible };
 
 })();

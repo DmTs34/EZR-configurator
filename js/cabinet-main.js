@@ -137,6 +137,9 @@
     /* Drag-and-drop accessory placement */
     if (window.CabinetDrag) CabinetDrag.init(canvas, scene, camera);
 
+    /* Drag-and-drop chassis placement */
+    if (window.CabinetChassis) CabinetChassis.init(canvas, scene, camera);
+
     /* Row-origin arrow */
     if (window.CabinetArrow) CabinetArrow.init(canvas, scene, camera);
 

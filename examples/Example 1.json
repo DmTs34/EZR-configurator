@@ -1,0 +1,343 @@
+{
+  "projectName": "New Project",
+  "savedAt": "2026-04-09T14:25:14.732Z",
+  "camera": {
+    "theta": -0.3676814692820415,
+    "phi": 1.348473815219112,
+    "radius": 5.24,
+    "target": {
+      "x": 0.4426653368122354,
+      "y": 1.10772,
+      "z": 0.1491747007376119
+    }
+  },
+  "rows": [
+    {
+      "id": 0,
+      "origin": {
+        "x": 0,
+        "z": 0
+      },
+      "angle": 0,
+      "flipped": false
+    }
+  ],
+  "cabinets": [
+    {
+      "code": "EZR_OP-46U-15DAS-D000B0S00T0-E-GY",
+      "xOffset": 0,
+      "rowIdx": 0,
+      "label": "ODF #1",
+      "placedAccessories": [],
+      "placedChassis": [
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 0,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 6,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 12,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 18,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 24,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 30,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 36,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 0,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 6,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 12,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 18,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 24,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 30,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 36,
+          "heightU": 6
+        }
+      ]
+    },
+    {
+      "code": "EZR_OP-46U-15DAS-D000B0S00T0-E-GY",
+      "xOffset": 1500,
+      "rowIdx": 0,
+      "label": "ODF #2",
+      "placedAccessories": [],
+      "placedChassis": [
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 0,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 6,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 12,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 18,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 24,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 30,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 36,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 0,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 6,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 12,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 18,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 24,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 30,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 36,
+          "heightU": 6
+        }
+      ]
+    },
+    {
+      "code": "EZR_OP-46U-15DAS-D000B0S00T0-E-GY",
+      "xOffset": 3000,
+      "rowIdx": 0,
+      "label": "ODF #3",
+      "placedAccessories": [],
+      "placedChassis": [
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 0,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 6,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 12,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 18,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 24,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 30,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 36,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 0,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 6,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 12,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 18,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 24,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 30,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 36,
+          "heightU": 6
+        }
+      ]
+    },
+    {
+      "code": "EZR_OP-46U-15DAS-D000B0S00T0-E-GY",
+      "xOffset": 4500,
+      "rowIdx": 0,
+      "label": "ODF #4",
+      "placedAccessories": [],
+      "placedChassis": [
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 0,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 6,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 12,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 18,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 24,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 30,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-L",
+          "slotIdx": 36,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 0,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 6,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 12,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 18,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 24,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 30,
+          "heightU": 6
+        },
+        {
+          "code": "Chassis-LISA-6U-R",
+          "slotIdx": 36,
+          "heightU": 6
+        }
+      ]
+    }
+  ]
+}

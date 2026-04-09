@@ -140,6 +140,7 @@ button:disabled, .btn:disabled {
 }
 .step.locked    .step-num { background: var(--color-disabled); }
 .step.completed .step-num { background: var(--color-success); }
+.step-num-icon  { background: transparent !important; font-size: 20px; }
 
 .step-title {
   flex: 1;

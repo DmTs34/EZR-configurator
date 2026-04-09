@@ -64,6 +64,22 @@ window.CabinetDrag = (function () {
   let _placed       = []; // { accCode, snapId, mesh } — current cabinet
   let _lockedPlaced = []; // finalized (previous cabinets) — not interactive
 
+  // ── GLB cache ─────────────────────────────────────
+  const _glbCache = {};
+  function _loadGLB(code) {
+    const path = `${COMP_ROOT}${code}.glb`;
+    if (_glbCache[path]) return Promise.resolve(_glbCache[path].clone(true));
+    const LC = THREE.GLTFLoader || window.GLTFLoader;
+    return new Promise((resolve, reject) =>
+      new LC().load(path, gltf => {
+        const g = gltf.scene;
+        g.position.set(0, 0, 0); g.rotation.set(0, 0, 0); g.scale.set(1, 1, 1);
+        _glbCache[path] = g;
+        resolve(g.clone(true));
+      }, undefined, reject)
+    );
+  }
+
   const _mkGeo = () => new THREE.SphereGeometry(MARKER_R, 10, 7);
 
   /* ══════════════════════════════════════════════════
@@ -427,6 +443,10 @@ window.CabinetDrag = (function () {
       }
     }
 
+    // Clear accessories and chassis meshes — rebuildAllCabinetsFromState will recreate them
+    if (window.CabinetDrag)    CabinetDrag.clearAll();
+    if (window.CabinetChassis) CabinetChassis.clearAll();
+
     // Rebuild the scene
     if (window.CabinetBuilder && window.CabinetBuilder.rebuildAllCabinetsFromState) {
       CabinetBuilder.rebuildAllCabinetsFromState();
@@ -710,12 +730,8 @@ window.CabinetDrag = (function () {
   }
 
   async function _placeAccessory(accCode, snap) {
-    const Loader = THREE.GLTFLoader || window.GLTFLoader;
-    if (!Loader) return;
     try {
-      const gltf = await new Promise((res, rej) =>
-        new Loader().load(`${COMP_ROOT}${accCode}.glb`, res, undefined, rej));
-      const mesh = gltf.scene;
+      const mesh = await _loadGLB(accCode);
       mesh.traverse(c => {
         if (!c.isMesh) return;
         c.userData.origMat = c.material;
@@ -808,12 +824,8 @@ window.CabinetDrag = (function () {
      3D ghost mesh (new placement only)
   ══════════════════════════════════════════════════ */
   async function _loadGhost(accCode) {
-    const Loader = THREE.GLTFLoader || window.GLTFLoader;
-    if (!Loader) return;
     try {
-      const gltf = await new Promise((res, rej) =>
-        new Loader().load(`${COMP_ROOT}${accCode}.glb`, res, undefined, rej));
-      _ghostMesh = gltf.scene;
+      _ghostMesh = await _loadGLB(accCode);
       _ghostMesh.traverse(c => {
         if (c.isMesh) c.material = new THREE.MeshStandardMaterial(
           { color: COLOR_GHOST, transparent: true, opacity: OPACITY_MOVING });
@@ -926,6 +938,9 @@ window.CabinetDrag = (function () {
         }
       });
     }
+    if (Cabinet.cabinets[editingIdx]) {
+      Cabinet.cabinets[editingIdx].placedAccessories = _placed.map(p => ({ code: p.accCode, snapId: p.snapId }));
+    }
     const start = _lockedStart(editingIdx);
     _lockedPlaced.splice(start, 0, ..._placed);
     _placed = [];
@@ -1010,5 +1025,65 @@ window.CabinetDrag = (function () {
     }
   }
 
-  return { init, clear, clearAll, finalizeCurrent, saveEditBack, loadForEdit, shiftLockedPlaced, rebuildAllAccessories };
+  // Creates meshes for accessory entries that are in state but not yet in _lockedPlaced.
+  // Called after rebuildAllCabinetsFromState (e.g. after cabinet duplication).
+  async function rebuildFromState() {
+    const editingIdx = Cabinet.editingIdx ?? -1;
+
+    const existingCount = _lockedPlaced.length;
+    let expectedCount = 0;
+    for (let i = 0; i < Cabinet.cabinets.length; i++) {
+      if (i === editingIdx) continue;
+      expectedCount += Cabinet.cabinets[i]?.placedAccessories?.length || 0;
+    }
+
+    if (expectedCount === existingCount) {
+      rebuildAllAccessories();
+      return;
+    }
+
+    let coveredCount = 0;
+    const tasks = [];
+
+    for (let i = 0; i < Cabinet.cabinets.length; i++) {
+      if (i === editingIdx) continue;
+      const cab = Cabinet.cabinets[i];
+      const count = cab.placedAccessories?.length || 0;
+
+      if (coveredCount + count <= existingCount) {
+        coveredCount += count;
+        continue;
+      }
+
+      const rowIdx = cab.rowIdx ?? 0;
+      const startEntry = existingCount - coveredCount;
+
+      for (let j = Math.max(0, startEntry); j < count; j++) {
+        const entry = cab.placedAccessories[j];
+        const snaps = CabinetBuilder.getSnapPoints(cab.code, entry.code, cab.xOffset, rowIdx);
+        const snap  = snaps.find(s => s.id === entry.snapId);
+        tasks.push(
+          _loadGLB(entry.code)
+            .then(mesh => ({ mesh, entry, snap, rowIdx }))
+            .catch(e => { console.warn('[CabinetDrag] rebuildFromState failed:', entry.code, e.message); return null; })
+        );
+      }
+      coveredCount += count;
+    }
+
+    const results = await Promise.all(tasks);
+    for (const r of results) {
+      if (!r || !r.snap) continue;
+      const { mesh, entry, snap, rowIdx } = r;
+      mesh.traverse(c => { if (c.isMesh) c.userData.origMat = c.material; });
+      mesh.position.copy(snap.position);
+      mesh.rotation.y = _rowRotY(rowIdx);
+      mesh.rotation.z = (entry.rotated ?? false) ? Math.PI : 0;
+      mesh.userData.isPlaced = true;
+      _scene.add(mesh);
+      _lockedPlaced.push({ accCode: entry.code, snapId: entry.snapId, mesh, rotated: entry.rotated ?? false });
+    }
+  }
+
+  return { init, clear, clearAll, finalizeCurrent, saveEditBack, loadForEdit, shiftLockedPlaced, rebuildAllAccessories, rebuildFromState };
 })();

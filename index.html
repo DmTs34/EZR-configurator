@@ -90,8 +90,8 @@
     <!-- ══════════════════════════════════════════════
          STEP 2 — ACCESSORIES
     ══════════════════════════════════════════════ -->
-<div class="step collapsed locked" id="step3">
-      <div class="step-header" onclick="toggleStep('step3')">
+    <div class="step collapsed locked" id="step2">
+      <div class="step-header" onclick="toggleStep('step2')">
         <div class="step-num">2</div>
         <div class="step-title">Accessories</div>
         <div class="step-chevron">▾</div>
@@ -101,18 +101,18 @@
         <div class="preset-cards-row" id="accGrid"></div>
 
         <div style="padding:12px 0 4px">
-          <button class="btn btn-primary btn-block" id="readyBtn" onclick="onGoToChassisStep()">
+          <button class="btn btn-primary btn-block" onclick="onGoToChassisStep()">
             Go the next step →
           </button>
         </div>
       </div>
-    </div><!-- /step3 -->
+    </div><!-- /step2 -->
 
     <!-- ══════════════════════════════════════════════
          STEP 3 — CHASSIS
     ══════════════════════════════════════════════ -->
-<div class="step collapsed locked" id="stepChassis">
-      <div class="step-header" onclick="toggleStep('stepChassis')">
+    <div class="step collapsed locked" id="step3">
+      <div class="step-header" onclick="toggleStep('step3')">
         <div class="step-num">3</div>
         <div class="step-title">Chassis</div>
         <div class="step-chevron">▾</div>
@@ -121,19 +121,19 @@
         <!-- Chassis cards -->
         <div class="preset-cards-row" id="chaGrid"></div>
         <div style="padding:12px 0 4px">
-          <button class="btn btn-primary btn-block" id="readyBtn" onclick="onReadyClick()">
+          <button class="btn btn-primary btn-block" onclick="onReadyClick()">
             Finalize the rack →
           </button>
         </div>
       </div>
-    </div><!-- /stepChassis -->
+    </div><!-- /step3 -->
     <!-- ══════════════════════════════════════════════
          STEP 4 — EXPORT / BOM
     ══════════════════════════════════════════════ -->
-    <div class="step collapsed locked" id="step4">
+    <div class="step collapsed" id="step4">
       <div class="step-header" onclick="toggleStep('step4')">
-        <div class="step-num">4</div>
-        <div class="step-title">Export / BOM</div>
+        <div class="step-num step-num-icon">💾</div>
+        <div class="step-title">Export / Import</div>
         <div class="step-chevron">▾</div>
       </div>
       <div class="step-content">
@@ -148,7 +148,9 @@
             </tbody>
           </table>
         </div>
-        <button class="btn btn-secondary btn-block" onclick="saveConfig()">Save Config (JSON)</button>
+        <button class="btn btn-secondary btn-block" onclick="saveConfig()">Export Project (JSON)</button>
+        <button class="btn btn-secondary btn-block" onclick="loadConfig()">Import Project (JSON)</button>
+        <button class="btn btn-secondary btn-block" onclick="loadExample('examples/Example 1.json')">Load Example</button>
         <button class="btn btn-primary btn-block"   onclick="exportBOM()">Export BOM (CSV)</button>
       </div>
     </div><!-- /step4 -->

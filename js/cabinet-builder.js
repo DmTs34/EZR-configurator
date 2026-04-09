@@ -327,28 +327,28 @@ window.CabinetBuilder = (function () {
     },
     '12STM': {
       50: [
-        ['AX','BL','BL','BL','BL','DL','BL','BL','BL','BL','CL', null],
-        ['AX','BR','BR','BR','BR','DR','BR','BR','BR','BR','CR', null],
+        ['AR','BR1','BR2','BR2','BR2','DR','BR1','BR2','BR2','BR2','CR', null],
+        ['AL','BL1','BL2','BL2','BL2','DL','BL1','BL2','BL2','BL2','CL', null],
       ],
       46: [
-        ['AX','BL','BL','BL','BL','DL','BL','BL','BL','BL','CL'],
-        ['AX','BR','BR','BR','BR','DR','BR','BR','BR','BR','CR'],
+        ['AR','BL1','BL2','BL2','BL2','DL','BL1','BL2','BL2','BL2','CL'],
+        ['AL','BR1','BR2','BR2','BR2','DR','BR1','BR2','BR2','BR2','CR'],
       ],
       42: [
-        ['AX','BL','BL','BL','BL','DL','BL','BL','BL','BL'],
-        ['AX','BR','BR','BR','BR','DR','BR','BR','BR','BR'],
+        ['AL','BL1','BL2','BL2','BL2','DL','BL1','BL2','BL2','BL2'],
+        ['AR','BR1','BR2','BR2','BR2','DR','BR1','BR2','BR2','BR2'],
       ],
       38: [
-        ['AX','BL','BL','BL','DL','BL','BL','BL','CL'],
-        ['AX','BR','BR','BR','DR','BR','BR','BR','CR'],
+        ['AL','BL1','BL2','BL2','DL','BL1','BL2','BL2','CL'],
+        ['AR','BR1','BR2','BR2','DR','BR1','BR2','BR2','CR'],
       ],
       22: [
-        ['AX','BL','BL','BL','BL'],
-        ['AX','BR','BR','BR','BR'],
+        ['AL','BL1','BL2','BL2','BL2'],
+        ['AR','BR1','BR2','BR2','BR2'],
       ],
       18: [
-        ['AX','BL','BL','BL'],
-        ['AX','BR','BR','BR'],
+        ['AL','BL1','BL2','BL2'],
+        ['AR','BR1','BR2','BR2'],
       ],
     },
     '12IFA': {
@@ -1862,8 +1862,8 @@ window.CabinetBuilder = (function () {
       _lockedAssemblies.push(group);
       showLockedHighlight(cab.xOffset, p.widthMM, i, cab.rowIdx ?? 0);
     }
-    if (window.CabinetDrag?.rebuildAllAccessories)  CabinetDrag.rebuildAllAccessories();
-    if (window.CabinetChassis?.rebuildFromState)    CabinetChassis.rebuildFromState();
+    if (window.CabinetDrag?.rebuildFromState)     CabinetDrag.rebuildFromState();
+    if (window.CabinetChassis?.rebuildFromState)  CabinetChassis.rebuildFromState();
   }
 
   /**

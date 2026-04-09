@@ -1165,16 +1165,91 @@ function _renderBOM() {
 }
 
 function saveConfig() {
+  const ctrl = window.CabinetControls;
   const data = {
-    projectName:      Cabinet.projectName,
-    savedAt:          new Date().toISOString(),
-    descriptionCode:  Cabinet.descriptionCode,
-    wizardSelections: Cabinet.wizardSelections,
-    mountingPlates:   Cabinet.mountingPlates,
-    bom:              Cabinet.bom,
+    projectName: Cabinet.projectName,
+    savedAt:     new Date().toISOString(),
+    camera: ctrl ? {
+      theta:  ctrl.getTheta(),
+      phi:    ctrl.getPhi(),
+      radius: ctrl.getRadius(),
+      target: { x: ctrl.getTarget().x, y: ctrl.getTarget().y, z: ctrl.getTarget().z },
+    } : null,
+    rows:     Cabinet.rows.map(r => ({ id: r.id, origin: { x: r.origin.x, z: r.origin.z }, angle: r.angle, flipped: r.flipped })),
+    cabinets: Cabinet.cabinets.map(c => ({
+      code:              c.code,
+      xOffset:           c.xOffset,
+      rowIdx:            c.rowIdx ?? 0,
+      label:             c.label,
+      placedAccessories: (c.placedAccessories || []).map(a => ({ code: a.code, snapId: a.snapId })),
+      placedChassis:     (c.placedChassis || []).map(ch => ({ code: ch.code, slotIdx: ch.slotIdx, heightU: ch.heightU })),
+    })),
   };
   _downloadJSON(data, `${Cabinet.projectName.replace(/\s+/g,'-')}_config.json`);
-  showToast('Configuration saved','success');
+  showToast('Configuration saved', 'success');
+}
+
+async function _applyConfig(data) {
+  if (!Array.isArray(data.cabinets)) { showToast('Invalid config file', 'error'); return; }
+
+  CabinetBuilder.clearAll({ noFade: true });
+  if (window.CabinetDrag)    CabinetDrag.clearAll();
+  if (window.CabinetChassis) CabinetChassis.clearAll();
+  if (window.CabinetFloor)   CabinetFloor.clear?.();
+
+  Cabinet.projectName           = data.projectName || 'Imported Project';
+  Cabinet.rows                  = data.rows || [{ id: 0, origin: { x: 0, z: 0 }, angle: 0, flipped: false }];
+  Cabinet.cabinets              = data.cabinets;
+  Cabinet.activeRowIdx          = 0;
+  Cabinet.editingIdx            = -1;
+  Cabinet.descriptionCode       = '';
+  Cabinet.isCodeValid           = false;
+  Cabinet.placedAccessories     = [];
+  Cabinet.placedChassis         = [];
+  Cabinet.currentCabinetXOffset = 0;
+
+  await CabinetBuilder.rebuildAllCabinetsFromState();
+  if (window.CabinetArrow) CabinetArrow.rebuildAll?.();
+  if (window.CabinetFloor) CabinetFloor.update?.();
+
+  if (data.camera && window.CabinetControls) {
+    const c = data.camera;
+    CabinetControls.setView(c.theta, c.phi, c.radius);
+    if (c.target) CabinetControls.setTarget(new THREE.Vector3(c.target.x, c.target.y, c.target.z));
+  }
+
+  _resetForNextCabinet();
+  _rebuildBOM();
+  if (window.CabinetUI) CabinetUI.updateCabinetList?.();
+  showToast('Project loaded: ' + Cabinet.projectName, 'success');
+}
+
+function loadConfig() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      await _applyConfig(data);
+    } catch (err) {
+      showToast('Failed to load config: ' + err.message, 'error');
+    }
+  };
+  input.click();
+}
+
+async function loadExample(path) {
+  try {
+    const resp = await fetch(path);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    await _applyConfig(data);
+  } catch (err) {
+    showToast('Failed to load example: ' + err.message, 'error');
+  }
 }
 
 function exportBOM() {
@@ -1873,9 +1948,9 @@ function useEZRConfig() {
     return;
   }
   _collapseStep1ToCode();
-  activateStep('step3');
+  activateStep('step2');
   unlockStep('step4');
-  document.getElementById('step3').scrollIntoView({ behavior: 'smooth' });
+  document.getElementById('step2').scrollIntoView({ behavior: 'smooth' });
   // Reset accessory grid scroll so cards always start from the left
   const accGrid = document.getElementById('accGrid');
   if (accGrid) accGrid.scrollLeft = 0;
@@ -2402,10 +2477,10 @@ function onGoToChassisStep() {
     return;
   }
 
-  activateStep('stepChassis');
-  completeStep('step3');
+  activateStep('step3');
+  completeStep('step2');
 
-  const el = document.getElementById('stepChassis');
+  const el = document.getElementById('step3');
   if (el) el.scrollIntoView({ behavior: 'smooth' });
 
   if (window.CabinetChassis) {
@@ -2426,6 +2501,10 @@ function onReadyClick() {
     showToast('Cabinet overlaps an existing cabinet — cannot place here', 'error');
     return;
   }
+
+  // Save accessory/chassis state into the cabinet object before finalizing
+  Cabinet.cabinets[idx].placedAccessories = [...(Cabinet.placedAccessories || [])];
+  Cabinet.cabinets[idx].placedChassis     = [...(Cabinet.placedChassis || [])];
 
   // Finalize chassis and accessories
   if (window.CabinetChassis) CabinetChassis.finalizeCurrent();
@@ -2512,7 +2591,11 @@ async function switchToCabinetEdit(idx) {
 
   _renderCurrentCodeRow(cab.code);
   _renderCodeEditor();
+  _collapseStep1ToCode();
   completeStep('step1');
+  activateStep('step2');
+  activateStep('step3');
+  unlockStep('step4');
   _setUseConfigBtn(true);
   _rebuildBOM();
   useEZRConfig();
@@ -2520,12 +2603,10 @@ async function switchToCabinetEdit(idx) {
 }
 
 function _resetForNextCabinet() {
-  ['step1','step3','stepChassis','step4'].forEach(id => {
+  ['step1','step2','step3'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.classList.remove('completed');
-    // Keep Export unlocked once at least one cabinet has been confirmed
-    if (id === 'step4' && Cabinet.cabinets.length > 0) return;
     if (id !== 'step1') el.classList.add('locked', 'collapsed');
   });
   if (window.CabinetChassis) CabinetChassis.clear();
@@ -2647,7 +2728,7 @@ Object.assign(window, {
   toggleStep,
   setMode, openWizard,
   wizSelectPR, wizSelectHE, wizSelectAS, wizSelectCL, wizNext, wizBack,
-  openPlateConfigurator, saveConfig, exportBOM, renderSnapshot, switchToCabinetEdit,
+  openPlateConfigurator, saveConfig, loadConfig, loadExample, exportBOM, renderSnapshot, switchToCabinetEdit,
   openModal, closeModal, showToast,
   // Presets
   togglePresetGallery, selectPreset,

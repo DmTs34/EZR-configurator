@@ -55,8 +55,9 @@ window.CabinetChassis = (function () {
 
   /** Chassis catalog */
   const CHASSIS_CATALOG = [
-    { code: 'Chassis-LISA-6U-L', label: 'LISA 6U-L', desc: 'LISA chassis, 6U Left',  heightU: 6 },
-    { code: 'Chassis-LISA-6U-R', label: 'LISA 6U-R', desc: 'LISA chassis, 6U Right', heightU: 6 },
+    { code: 'Chassis-LISA-6U-L',      label: 'LISA 6U-L',   desc: 'LISA chassis, 6U Left',  heightU: 6, section: 'L' },
+    { code: 'Chassis-LISA-6U-R',      label: 'LISA 6U-R',   desc: 'LISA chassis, 6U Right', heightU: 6, section: 'R' },
+    { code: 'Chassis-EZR_ROUT-BRKT',  label: 'ROUT-BRKT 2U', desc: 'EZR routing bracket, 2U', heightU: 2 },
   ];
 
   /* ══════════════════════════════════════════════════
@@ -66,6 +67,22 @@ window.CabinetChassis = (function () {
   let _scene      = null;
   let _canvas     = null;
   let _camera     = null;
+
+  const _glbCache = {};
+
+  function _loadGLB(code) {
+    const path = `${COMP_ROOT}${code}.glb`;
+    if (_glbCache[path]) return Promise.resolve(_glbCache[path].clone(true));
+    const LC = THREE.GLTFLoader || window.GLTFLoader;
+    return new Promise((resolve, reject) =>
+      new LC().load(path, gltf => {
+        const g = gltf.scene;
+        g.position.set(0, 0, 0); g.rotation.set(0, 0, 0); g.scale.set(1, 1, 1);
+        _glbCache[path] = g;
+        resolve(g.clone(true));
+      }, undefined, reject)
+    );
+  }
 
   let _dragging   = false;
   let _dragCode   = null;
@@ -114,21 +131,39 @@ window.CabinetChassis = (function () {
 
   const ASSEMBLY_LIFT = 14; // mm — same as cabinet-builder.js
 
-  function _buildSlots(descCode, xOffset, rowIdx) {
+  function _getCatalogEntry(code) {
+    return CHASSIS_CATALOG.find(c => c.code === code) ?? null;
+  }
+
+  function _buildSlots(descCode, xOffset, rowIdx, chassisCode = null) {
     const p = CabinetBuilder.parseCode(descCode);
     if (!p) return [];
-
-    const railX = RAIL_X_OFFSET[p.de];
-    if (railX === null || railX === undefined) return [];
 
     const heightU = parseInt(p.he);
     const slots = [];
 
+    let sectionOffsetMM, sectionRailX;
+
+    if (p.de === '15DAS') {
+      const cat = _getCatalogEntry(chassisCode);
+      const section = cat?.section ?? 'L';
+      if (section === 'R') {
+        sectionOffsetMM = 600;
+        sectionRailX = RAIL_X_OFFSET['09DAR']; // 300
+      } else {
+        sectionOffsetMM = 0;
+        sectionRailX = RAIL_X_OFFSET['06LR0']; // 40
+      }
+    } else {
+      sectionOffsetMM = 0;
+      sectionRailX = RAIL_X_OFFSET[p.de];
+      if (sectionRailX === null || sectionRailX === undefined) return [];
+    }
+
     for (let i = 0; i < heightU; i++) {
-      const lxMM = railX + SLOT_OFF_X;  // local X within cabinet
+      const lxMM = sectionOffsetMM + sectionRailX + SLOT_OFF_X;
       const lyMM = ASSEMBLY_LIFT + RAIL_Y_BASE + SLOT_OFF_Y + i * SLOT_H_MM;
-      const lzMM = 0;
-      const worldPos = CabinetUtils.localToWorld(lxMM, lyMM, lzMM, xOffset, rowIdx, p.widthMM);
+      const worldPos = CabinetUtils.localToWorld(lxMM, lyMM, 0, xOffset, rowIdx, p.widthMM);
       slots.push({ idx: i, position: worldPos, occupied: false });
     }
 
@@ -136,12 +171,16 @@ window.CabinetChassis = (function () {
   }
 
   function _markOccupied() {
-    for (const s of _slots) {
-      s.occupied = false;
-    }
-    for (const p of _placed) {
-      const { slotIdx, heightU } = p;
-      for (let i = slotIdx; i < slotIdx + heightU; i++) {
+    for (const s of _slots) s.occupied = false;
+    // For 15DAS (composite cabinet): L and R slots are independent — only count
+    // chassis from the same section. For all other cabinets: count everything.
+    const p = CabinetBuilder.parseCode(Cabinet.descriptionCode);
+    const dragSection = (p?.de === '15DAS')
+      ? (_getCatalogEntry(_dragCode)?.section ?? null)
+      : null;
+    for (const ch of _placed) {
+      if (dragSection !== null && (_getCatalogEntry(ch.code)?.section ?? null) !== dragSection) continue;
+      for (let i = ch.slotIdx; i < ch.slotIdx + ch.heightU; i++) {
         if (_slots[i]) _slots[i].occupied = true;
       }
     }
@@ -218,7 +257,6 @@ window.CabinetChassis = (function () {
         }
       }
     });
-    console.log('[CabinetChassis] _setPlacedOpacity: set', meshCount, 'meshes to opacity', opacity);
   }
 
   /* ══════════════════════════════════════════════════
@@ -227,11 +265,7 @@ window.CabinetChassis = (function () {
 
   async function _loadGhost(code) {
     try {
-      const loader = new (THREE.GLTFLoader || window.GLTFLoader)();
-      const gltf = await new Promise((res, rej) =>
-        loader.load(`${COMP_ROOT}${code}.glb`, res, undefined, rej)
-      );
-      _ghostMesh = gltf.scene;
+      _ghostMesh = await _loadGLB(code);
 
       // Apply transparent material
       _ghostMesh.traverse(c => {
@@ -314,16 +348,11 @@ window.CabinetChassis = (function () {
 
     // Snap if in range and valid
     if (inRange && bestIdx >= 0) {
-      if (_checkCollision(bestIdx, heightU)) {
-        _setNearSlot(bestIdx, heightU);
-        _canDrop = true;
-      } else {
-        _setNearSlot(-1, heightU);
-        _canDrop = false;
-      }
+      _canDrop = _checkCollision(bestIdx, heightU);
+      _setNearSlot(_canDrop ? bestIdx : -1, heightU);
     } else {
-      _setNearSlot(-1, heightU);
       _canDrop = false;
+      _setNearSlot(-1, heightU);
     }
   }
 
@@ -458,7 +487,6 @@ window.CabinetChassis = (function () {
   }
 
   function _onCardDown(e) {
-    console.log('[CabinetChassis] _onCardDown fired, button:', e.button);
     if (e.button !== 0) return;
     const card = e.target.closest('.cha-card');
     const code = card?.dataset.chaCode;
@@ -476,7 +504,6 @@ window.CabinetChassis = (function () {
   }
 
   function _startMoveDrag(code, idx, cx, cy, isCopy) {
-    console.log('[CabinetChassis] _startMoveDrag: code=', code, 'idx=', idx, 'isCopy=', isCopy);
     _dragging = true;
     _dragCode = code;
     _dragStart = { x: cx, y: cy };
@@ -497,7 +524,8 @@ window.CabinetChassis = (function () {
     _slots = _buildSlots(
       Cabinet.descriptionCode,
       Cabinet.currentCabinetXOffset,
-      Cabinet.activeRowIdx ?? 0
+      Cabinet.activeRowIdx ?? 0,
+      code
     );
     _markOccupied();
 
@@ -523,7 +551,6 @@ window.CabinetChassis = (function () {
   }
 
   function _startDrag(code, cx, cy) {
-    console.log('[CabinetChassis] _startDrag: code=', code, 'cx=', cx, 'cy=', cy);
     _dragging = true;
     _dragCode = code;
     _dragStart = { x: cx, y: cy };
@@ -534,19 +561,16 @@ window.CabinetChassis = (function () {
     _ghostEl = _makeGhostLabel(code, cx, cy);
 
     // Build slots for active cabinet
-    console.log('[CabinetChassis] _startDrag: building slots...');
     _slots = _buildSlots(
       Cabinet.descriptionCode,
       Cabinet.currentCabinetXOffset,
-      Cabinet.activeRowIdx ?? 0
+      Cabinet.activeRowIdx ?? 0,
+      code
     );
-    console.log('[CabinetChassis] _startDrag: slots built, count=', _slots.length);
 
     _markOccupied();
     _showSlotMeshes();
-    console.log('[CabinetChassis] _startDrag: slot meshes shown');
     _loadGhost(code);
-    console.log('[CabinetChassis] _startDrag: ghost loading...');
   }
 
   let _moveCounter = 0;
@@ -560,7 +584,6 @@ window.CabinetChassis = (function () {
       e.stopPropagation();
 
       if (_moveCounter++ % 60 === 0) {
-        console.log('[CabinetChassis] drag: nearSlot=', _nearSlot, 'canDrop=', _canDrop);
       }
 
       // Update ghost label position
@@ -591,19 +614,15 @@ window.CabinetChassis = (function () {
       const placedMeshes = _placed.map(p => p.mesh);
       const intersects = raycaster.intersectObjects(placedMeshes, true);
 
-      console.log('[CabinetChassis] Hover raycast: _placed.length=', _placed.length, 'placedMeshes.length=', placedMeshes.length, 'intersects=', intersects.length);
-
       let newHoveredIdx = -1;
       if (intersects.length > 0) {
         const clickedMesh = intersects[0].object;
-        console.log('[CabinetChassis] Raycast hit! Trying to find matching index...');
         for (let i = 0; i < _placed.length; i++) {
           // Check if clickedMesh is the placed mesh or a descendant of it
           let current = clickedMesh;
           while (current) {
             if (current === _placed[i].mesh) {
               newHoveredIdx = i;
-              console.log('[CabinetChassis] Found matching index:', i);
               break;
             }
             current = current.parent;
@@ -613,11 +632,9 @@ window.CabinetChassis = (function () {
       }
 
       if (newHoveredIdx !== _hoveredIdx) {
-        console.log('[CabinetChassis] Hover: _hoveredIdx=', _hoveredIdx, '→', newHoveredIdx, 'placed.length=', _placed.length);
 
         // Restore opacity of previously hovered chassis
         if (_hoveredIdx >= 0 && _placed[_hoveredIdx]) {
-          console.log('[CabinetChassis] Restoring prev hover opacity:', OPACITY_PLACED);
           _setPlacedOpacity(_placed[_hoveredIdx].mesh, OPACITY_PLACED);
         }
 
@@ -625,7 +642,6 @@ window.CabinetChassis = (function () {
 
         // Apply hover opacity to new hovered chassis
         if (_hoveredIdx >= 0) {
-          console.log('[CabinetChassis] Applying hover opacity:', OPACITY_HOVER);
           _setPlacedOpacity(_placed[_hoveredIdx].mesh, OPACITY_HOVER);
           _canvas.style.cursor = _ctrlHeld ? 'copy' : 'grab';
         } else {
@@ -643,14 +659,11 @@ window.CabinetChassis = (function () {
     // so CabinetControls can reset its drag flag
     e.preventDefault();
 
-    console.log('[CabinetChassis] _onUp: _nearSlot=', _nearSlot, '_canDrop=', _canDrop, '_movingIdx=', _movingIdx);
-
     if (_nearSlot >= 0 && _canDrop) {
       const heightU = _getHeightU(_dragCode);
 
       if (_movingIdx >= 0) {
         // Moving existing chassis
-        console.log('[CabinetChassis] _onUp: Moving chassis idx=', _movingIdx);
         _placed[_movingIdx].slotIdx = _nearSlot;
         _placed[_movingIdx].mesh.position.copy(_slots[_nearSlot].position);
         _placed[_movingIdx].mesh.rotation.y = CabinetUtils.rowRotY(Cabinet.activeRowIdx ?? 0);
@@ -660,12 +673,10 @@ window.CabinetChassis = (function () {
         _setPlacedOpacity(_placed[_movingIdx].mesh, OPACITY_PLACED);
       } else {
         // New placement (from card or copy)
-        console.log('[CabinetChassis] _onUp: Placing new chassis, code=', _dragCode, 'slotIdx=', _nearSlot);
         await _placeChassis(_dragCode, _nearSlot, heightU);
       }
     } else if (_movingIdx >= 0 && _moveOriginPos !== null) {
       // Move cancelled - restore original position, visibility and opacity
-      console.log('[CabinetChassis] _onUp: Move cancelled, restoring idx=', _movingIdx);
       _placed[_movingIdx].slotIdx = _moveOriginPos;
       _placed[_movingIdx].mesh.position.copy(_slots[_moveOriginPos].position);
       _placed[_movingIdx].mesh.visible = true;
@@ -674,7 +685,6 @@ window.CabinetChassis = (function () {
       // Restore opacity
       _setPlacedOpacity(_placed[_movingIdx].mesh, OPACITY_PLACED);
     } else {
-      console.log('[CabinetChassis] _onUp: No valid placement, dropped at invalid location');
     }
 
     _endDrag();
@@ -735,13 +745,14 @@ window.CabinetChassis = (function () {
   function _duplicateChassis(idx) {
     if (idx < 0 || idx >= _placed.length) return;
     const chassis = _placed[idx];
-    console.log('[CabinetChassis] _duplicateChassis: idx=', idx, 'code=', chassis.code);
 
     // Rebuild slots to get current occupancy
+    _dragCode = chassis.code;
     _slots = _buildSlots(
       Cabinet.descriptionCode,
       Cabinet.currentCabinetXOffset,
-      Cabinet.activeRowIdx ?? 0
+      Cabinet.activeRowIdx ?? 0,
+      chassis.code
     );
     _markOccupied();
 
@@ -769,7 +780,6 @@ window.CabinetChassis = (function () {
   }
 
   function _removeChassis(idx) {
-    console.log('[CabinetChassis] _removeChassis: idx=', idx);
     if (idx < 0 || idx >= _placed.length) return;
 
     const p = _placed[idx];
@@ -793,7 +803,6 @@ window.CabinetChassis = (function () {
     }
 
     if (_hoveredIdx === idx) _hoveredIdx = -1;
-    console.log('[CabinetChassis] _removeChassis: removed, remaining=', _placed.length);
   }
 
   function _endDrag() {
@@ -825,14 +834,7 @@ window.CabinetChassis = (function () {
 
   async function _placeChassis(code, slotIdx, heightU) {
     try {
-      console.log('[CabinetChassis] _placeChassis: START code=', code, 'slotIdx=', slotIdx, 'heightU=', heightU);
-      const loader = new (THREE.GLTFLoader || window.GLTFLoader)();
-      const gltf = await new Promise((res, rej) =>
-        loader.load(`${COMP_ROOT}${code}.glb`, res, undefined, rej)
-      );
-
-      console.log('[CabinetChassis] _placeChassis: GLB loaded');
-      const mesh = gltf.scene;
+      const mesh = await _loadGLB(code);
 
       // Apply color material to all mesh components (like accessories)
       let materialCount = 0;
@@ -846,7 +848,6 @@ window.CabinetChassis = (function () {
           opacity: OPACITY_PLACED
         });
       });
-      console.log('[CabinetChassis] _placeChassis: Applied material to', materialCount, 'meshes');
 
       // Position and orient at slot
       const bottomSlot = _slots[slotIdx];
@@ -855,12 +856,10 @@ window.CabinetChassis = (function () {
       mesh.userData.isPlacedChassis = true;
 
       _scene.add(mesh);
-      console.log('[CabinetChassis] _placeChassis: Mesh added to scene, position=', mesh.position);
 
       // Add to state
       _placed.push({ code, slotIdx, heightU, mesh });
       Cabinet.placedChassis.push({ code, slotIdx, heightU });
-      console.log('[CabinetChassis] _placeChassis: Added to state, _placed.length=', _placed.length);
 
       // Update visuals
       _markOccupied();
@@ -869,8 +868,6 @@ window.CabinetChassis = (function () {
       if (window.CabinetUI && window.CabinetUI.rebuildBOM) {
         CabinetUI.rebuildBOM();
       }
-
-      console.log('[CabinetChassis] _placeChassis: COMPLETE');
     } catch (e) {
       console.warn('[CabinetChassis] Failed to place chassis:', e.message);
     }
@@ -1007,11 +1004,9 @@ window.CabinetChassis = (function () {
   }
 
   async function renderThumbs() {
-    console.log('[CabinetChassis] renderThumbs: starting for', CHASSIS_CATALOG.length, 'chassis');
     for (const c of CHASSIS_CATALOG) {
       const thumbId = _safeThumbId(c.code);
       const el = document.getElementById(thumbId);
-      console.log(`[CabinetChassis] renderThumbs: ${c.code} → id="${thumbId}" found=${!!el}`);
       if (!el) continue;
 
       // Try static first
@@ -1020,7 +1015,6 @@ window.CabinetChassis = (function () {
       try {
         const resp = await fetch(staticSrc, { method: 'HEAD' });
         if (resp.ok) {
-          console.log(`[CabinetChassis] Trying static thumbnail: ${staticSrc}`);
           const img = document.createElement('img');
           // Wait for image to load with timeout
           const loadPromise = new Promise((resolve, reject) => {
@@ -1034,27 +1028,22 @@ window.CabinetChassis = (function () {
             const spinner = el.querySelector('.preset-thumb-spinner');
             if (spinner) spinner.replaceWith(img);
             else el.insertBefore(img, el.firstChild);
-            console.log(`[CabinetChassis] Static thumbnail loaded: ${staticSrc}`);
             loaded = true;
           } catch (imgErr) {
-            console.log(`[CabinetChassis] Static thumbnail failed: ${imgErr.message}, trying live capture`);
           }
         }
       } catch (err) {
-        console.log(`[CabinetChassis] Static thumb not available: ${staticSrc}`);
       }
 
       // Fallback: render live
       if (!loaded) {
         try {
-          console.log(`[CabinetChassis] Capturing live thumbnail for ${c.code}`);
           const dataURL = await captureThumb(c.code);
           const img = document.createElement('img');
           img.src = dataURL;
           const spinner = el.querySelector('.preset-thumb-spinner');
           if (spinner) spinner.replaceWith(img);
           else el.insertBefore(img, el.firstChild);
-          console.log(`[CabinetChassis] Live thumbnail captured for ${c.code}`);
         } catch (e) {
           console.error('[CabinetChassis] Failed to capture thumb:', c.code, e.message, e);
         }
@@ -1068,17 +1057,12 @@ window.CabinetChassis = (function () {
     const camera = Cabinet.camera;
     if (!rdr || !scene || !camera) throw new Error('Scene not ready');
 
-    const LoaderClass = THREE.GLTFLoader || window.GLTFLoader;
-    if (!LoaderClass) throw new Error('GLTFLoader not available');
-
     const theta      = cam.theta         ?? 0.291;
     const phi        = cam.phi           ?? 1.409;
     const radiusMult = cam.accRadiusMult ?? 2.2;
 
     // Load the chassis GLB
-    const obj = await new Promise((resolve, reject) => {
-      new LoaderClass().load(`${COMP_ROOT}${code}.glb`, gltf => resolve(gltf.scene), null, reject);
-    });
+    const obj = await _loadGLB(code);
 
     // Centre at origin
     const bbox = new THREE.Box3().setFromObject(obj);
@@ -1132,10 +1116,8 @@ window.CabinetChassis = (function () {
     _camera = camera;
 
     const grid = document.getElementById('chaGrid');
-    console.log('[CabinetChassis] init: chaGrid element found:', !!grid);
     if (grid) {
       grid.addEventListener('mousedown', _onCardDown);
-      console.log('[CabinetChassis] init: mousedown listener attached to chaGrid');
     } else {
       console.warn('[CabinetChassis] init: chaGrid not found!');
     }
@@ -1179,8 +1161,6 @@ window.CabinetChassis = (function () {
         if (_hoveredIdx >= 0) _canvas.style.cursor = 'grab';
       }
     });
-
-    console.log('[CabinetChassis] init: complete');
   }
 
   /* ══════════════════════════════════════════════════
@@ -1193,7 +1173,7 @@ window.CabinetChassis = (function () {
     function _repositionEntry(entry, cab) {
       if (!cab) return;
       const rowIdx = cab.rowIdx ?? 0;
-      const slots = _buildSlots(cab.code, cab.xOffset, rowIdx);
+      const slots = _buildSlots(cab.code, cab.xOffset, rowIdx, entry.code);
       if (!slots.length) return;
       const slot = slots[entry.slotIdx];
       if (!slot) return;
@@ -1241,47 +1221,68 @@ window.CabinetChassis = (function () {
   async function rebuildFromState() {
     const editingIdx = Cabinet.editingIdx ?? -1;
 
-    // Dispose and clear all locked meshes
-    for (const p of _lockedPlaced) {
-      _scene.remove(p.mesh);
-      p.mesh.traverse(c => {
-        if (c.geometry) c.geometry.dispose();
-        if (c.material) c.material.dispose();
-      });
-    }
-    _lockedPlaced = [];
+    // Count how many locked chassis entries already exist
+    const existingCount = _lockedPlaced.length;
 
-    // Recreate meshes for each locked cabinet from saved state
+    // Count expected total from state
+    let expectedCount = 0;
+    for (let i = 0; i < Cabinet.cabinets.length; i++) {
+      if (i === editingIdx) continue;
+      expectedCount += Cabinet.cabinets[i]?.placedChassis?.length || 0;
+    }
+
+    // Nothing changed — just reposition
+    if (expectedCount === existingCount) {
+      rebuildAllChassis();
+      return;
+    }
+
+    // Find cabinets whose chassis are NOT yet in _lockedPlaced (new cabinets added at end)
+    // Walk cabinets in order, skip entries already covered by existing _lockedPlaced
+    function _load(code) { return _loadGLB(code); }
+
+    let coveredCount = 0;
+    const tasks = [];
+
     for (let i = 0; i < Cabinet.cabinets.length; i++) {
       if (i === editingIdx) continue;
       const cab = Cabinet.cabinets[i];
-      const chassis = cab.placedChassis;
-      if (!chassis || !chassis.length) continue;
+      const count = cab.placedChassis?.length || 0;
 
-      const rowIdx = cab.rowIdx ?? 0;
-      const slots = _buildSlots(cab.code, cab.xOffset, rowIdx);
-      if (!slots.length) continue;
-
-      for (const entry of chassis) {
-        try {
-          const loader = new (THREE.GLTFLoader || window.GLTFLoader)();
-          const gltf = await new Promise((res, rej) =>
-            loader.load(`${COMP_ROOT}${entry.code}.glb`, res, undefined, rej)
-          );
-          const mesh = gltf.scene;
-          // Restore original materials (locked — no green tint)
-          mesh.userData.isPlacedChassis = true;
-          const slot = slots[entry.slotIdx];
-          if (slot) {
-            mesh.position.copy(slot.position);
-            mesh.rotation.y = CabinetUtils.rowRotY(rowIdx);
-          }
-          _scene.add(mesh);
-          _lockedPlaced.push({ code: entry.code, slotIdx: entry.slotIdx, heightU: entry.heightU, mesh });
-        } catch (e) {
-          console.warn('[CabinetChassis] rebuildFromState: failed to load', entry.code, e.message);
-        }
+      if (coveredCount + count <= existingCount) {
+        // All entries for this cabinet already loaded — skip
+        coveredCount += count;
+        continue;
       }
+
+      // This cabinet has new entries (partially or fully missing)
+      const rowIdx = cab.rowIdx ?? 0;
+
+      const startEntry = existingCount - coveredCount; // entries already loaded for this cabinet
+      for (let j = Math.max(0, startEntry); j < count; j++) {
+        const entry = cab.placedChassis[j];
+        const slots = _buildSlots(cab.code, cab.xOffset, rowIdx, entry.code);
+        tasks.push(
+          _load(entry.code)
+            .then(mesh => ({ mesh, entry, slots, rowIdx }))
+            .catch(e => { console.warn('[CabinetChassis] rebuildFromState: failed', entry.code, e.message); return null; })
+        );
+      }
+      coveredCount += count;
+    }
+
+    const results = await Promise.all(tasks);
+    for (const r of results) {
+      if (!r) continue;
+      const { mesh, entry, slots, rowIdx } = r;
+      mesh.userData.isPlacedChassis = true;
+      const slot = slots[entry.slotIdx];
+      if (slot) {
+        mesh.position.copy(slot.position);
+        mesh.rotation.y = CabinetUtils.rowRotY(rowIdx);
+      }
+      _scene.add(mesh);
+      _lockedPlaced.push({ code: entry.code, slotIdx: entry.slotIdx, heightU: entry.heightU, mesh });
     }
   }
 

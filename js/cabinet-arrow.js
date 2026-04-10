@@ -299,9 +299,21 @@ window.CabinetArrow = (function () {
   function _bindEvents() {
     _canvas.addEventListener('mousedown',    _onMouseDown,   true);
     _canvas.addEventListener('contextmenu',  _onContextMenu, true);
+    _canvas.addEventListener('mousemove',    _onCanvasHover);
+    _canvas.addEventListener('mouseleave',   _onCanvasLeave);
     window.addEventListener('mousemove',     _onMouseMove);
     window.addEventListener('mouseup',       _onMouseUp);
     document.addEventListener('mousedown',   _hideCtxMenu);
+  }
+
+  function _onCanvasHover(e) {
+    if (_dragging) return;
+    const arrowIdx = _hitArrowIdx(e.clientX, e.clientY);
+    _canvas.style.cursor = arrowIdx >= 0 ? 'grab' : '';
+  }
+
+  function _onCanvasLeave() {
+    if (!_dragging) _canvas.style.cursor = '';
   }
 
   function _onMouseDown(e) {
@@ -316,6 +328,7 @@ window.CabinetArrow = (function () {
     _dragStarted  = false;
     _mouseDownX   = e.clientX;
     _mouseDownY   = e.clientY;
+    _canvas.style.cursor = 'grabbing';
     e.stopPropagation();
     e.preventDefault();
   }
@@ -350,6 +363,7 @@ window.CabinetArrow = (function () {
     const arrowIdx = _dragArrowIdx;
     _dragging     = false;
     _dragArrowIdx = -1;
+    _canvas.style.cursor = '';
     if (arrowIdx >= 0) {
       if (_dragStarted) {
         _hideSnapDots();

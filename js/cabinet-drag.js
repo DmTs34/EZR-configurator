@@ -305,6 +305,13 @@ window.CabinetDrag = (function () {
     itemDuplicate.onmouseleave = () => itemDuplicate.style.background = '';
     itemDuplicate.onmousedown  = (e) => { e.stopPropagation(); _duplicateCabinet(cabinetIdx); _hideCtxMenu(); };
 
+    const itemClone = document.createElement('div');
+    itemClone.style.cssText = 'padding:8px 14px;cursor:pointer;color:#1a1a1a;';
+    itemClone.textContent = 'Clone cabinet';
+    itemClone.onmouseenter = () => itemClone.style.background = '#f5f5f5';
+    itemClone.onmouseleave = () => itemClone.style.background = '';
+    itemClone.onmousedown  = (e) => { e.stopPropagation(); _cloneCabinet(cabinetIdx); _hideCtxMenu(); };
+
     const sep = document.createElement('div');
     sep.style.cssText = 'height:1px;background:#e8e8e8;margin:2px 0;';
 
@@ -316,6 +323,7 @@ window.CabinetDrag = (function () {
     itemDelete.onmousedown  = (e) => { e.stopPropagation(); _showDeleteConfirmation(cabinetIdx); _hideCtxMenu(); };
 
     menu.appendChild(itemDuplicate);
+    menu.appendChild(itemClone);
     menu.appendChild(sep);
     menu.appendChild(itemDelete);
     document.body.appendChild(menu);
@@ -380,6 +388,55 @@ window.CabinetDrag = (function () {
     if (window.CabinetFloor && window.CabinetFloor.update) {
       CabinetFloor.update();
     }
+  }
+
+  function _cloneCabinet(cabinetIdx) {
+    const cabinet = Cabinet.cabinets[cabinetIdx];
+    if (!cabinet) return;
+
+    // Ensure source has a cloneGroupId
+    if (!cabinet.cloneGroupId) {
+      cabinet.cloneGroupId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    }
+
+    const targetRowIdx = Cabinet.activeRowIdx ?? 0;
+    const rowCabinets  = Cabinet.cabinets.filter(c => c.rowIdx === targetRowIdx);
+    let maxXEnd = 0;
+    for (const cab of rowCabinets) {
+      const widthMM = parseInt(cab.code.split('-')[2].slice(0, 2)) * 100;
+      const xEnd = cab.xOffset + widthMM;
+      if (xEnd > maxXEnd) maxXEnd = xEnd;
+    }
+
+    let accessoriesToCopy = [];
+    if (Cabinet.editingIdx === cabinetIdx && Cabinet.placedAccessories) {
+      accessoriesToCopy = [...Cabinet.placedAccessories];
+    } else if (cabinet.placedAccessories) {
+      accessoriesToCopy = [...cabinet.placedAccessories];
+    }
+
+    let chassisToCopy = [];
+    if (Cabinet.editingIdx === cabinetIdx && Cabinet.placedChassis) {
+      chassisToCopy = [...Cabinet.placedChassis];
+    } else if (cabinet.placedChassis) {
+      chassisToCopy = [...cabinet.placedChassis];
+    }
+
+    const newCabinet = {
+      code: cabinet.code,
+      xOffset: maxXEnd,
+      rowIdx: targetRowIdx,
+      placedAccessories: accessoriesToCopy,
+      placedChassis: chassisToCopy,
+      label: `ODF #${Cabinet.cabinets.length + 1}`,
+      cloneGroupId: cabinet.cloneGroupId,
+    };
+
+    Cabinet.cabinets.push(newCabinet);
+
+    if (window.CabinetBuilder?.rebuildAllCabinetsFromState) CabinetBuilder.rebuildAllCabinetsFromState();
+    if (window.CabinetUI?.updateCabinetList)               CabinetUI.updateCabinetList();
+    if (window.CabinetFloor?.update)                       CabinetFloor.update();
   }
 
   function _showDeleteConfirmation(cabinetIdx) {
@@ -1085,5 +1142,5 @@ window.CabinetDrag = (function () {
     }
   }
 
-  return { init, clear, clearAll, finalizeCurrent, saveEditBack, loadForEdit, shiftLockedPlaced, rebuildAllAccessories, rebuildFromState };
+  return { init, clear, clearAll, finalizeCurrent, saveEditBack, loadForEdit, shiftLockedPlaced, rebuildAllAccessories, rebuildFromState, _isDragging: () => _dragging };
 })();

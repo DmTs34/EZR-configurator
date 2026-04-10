@@ -143,6 +143,25 @@
     /* Row-origin arrow */
     if (window.CabinetArrow) CabinetArrow.init(canvas, scene, camera);
 
+    /* Single click on canvas → finalize rack if editing */
+    {
+      let _clickDownX = 0, _clickDownY = 0;
+      canvas.addEventListener('mousedown', e => {
+        _clickDownX = e.clientX; _clickDownY = e.clientY;
+      });
+      canvas.addEventListener('mouseup', e => {
+        if (e.button !== 0) return;
+        const dist = Math.hypot(e.clientX - _clickDownX, e.clientY - _clickDownY);
+        if (dist > 5) return; // был drag, не клик
+        // Не реагируем если тащим аксессуар или шасси
+        if (window.CabinetDrag   && CabinetDrag._isDragging   && CabinetDrag._isDragging())   return;
+        if (window.CabinetChassis && CabinetChassis._isDragging && CabinetChassis._isDragging()) return;
+        if (window.Cabinet && Cabinet.editingIdx >= 0 && window.onReadyClick) {
+          onReadyClick();
+        }
+      });
+    }
+
     /* Done – hide loading overlay */
     const overlay = document.getElementById('viewportLoading');
     if (overlay) overlay.style.display = 'none';

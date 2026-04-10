@@ -13,6 +13,21 @@
 /* ══════════════════════════════════════════════════════
    CATALOG DATA
 ══════════════════════════════════════════════════════ */
+
+const PRESET_CONFIGS = [
+  { order: '85280142', code: 'EZR_OP-46U-06LR0-D000B0S00T0-A-GY' },
+  { order: '85269549', code: 'EZR_OP-46U-09STL-D000B0S00T0-A-GY' },
+  { order: '85269555', code: 'EZR_OP-46U-09STR-D000B0S00T0-A-GY' },
+  { order: '85269565', code: 'EZR_OP-46U-12IFA-D000B0S00T0-A-GY' },
+  { order: '—',        code: 'EZR_OP-46U-15DAS-D000B0S00T0-E-GY' },
+  { order: '85274066', code: 'EZR_CL-46U-06LR0-DB00B1S11T1-A-BK' },
+  { order: '85274483', code: 'EZR_CL-46U-06LR0-DH00B1S11T1-A-BK' },
+  { order: '85268280', code: 'EZR_CL-46U-09STL-DB02B1S11T1-A-BK' },
+  { order: '85269556', code: 'EZR_CL-46U-09STR-D20BB1S11T1-A-BK' },
+  { order: '—',        code: 'EZR_CL-46U-12IFA-DH0HB1S11T1-A-RD' },
+  { order: '85274607', code: 'EZR_CL-46U-15DAS-DH2HB1S11T1-E-BK' },
+];
+
 const PR_TYPES = {
   'EZR_FR': { label: 'Frame',  short: 'FR', icon: '⬜', desc: 'Open frame — no doors, no internal accessories' },
   'EZR_OP': { label: 'Open',   short: 'OP', icon: '🔲', desc: 'No doors, with predefined internal accessories' },
@@ -23,12 +38,12 @@ const HE_OPTIONS = ['18U','22U','38U','42U','46U','50U'];
 
 const DE_BY_PR = {
   'EZR_FR': [
-    { code:'03000', label:'300 mm',          desc:'Width 300 mm — with mounting plates' },
-    { code:'06000', label:'600 mm',          desc:'Width 600 mm — with mounting plates' },
-    { code:'06LR0', label:'600 mm no plates',desc:'Width 600 mm — without mounting plates' },
-    { code:'09L00', label:'900 mm left',     desc:'Width 900 mm — left-oriented chassis, with plates' },
-    { code:'090R0', label:'900 mm right',    desc:'Width 900 mm — right-oriented chassis, with plates' },
-    { code:'12LR0', label:'1200 mm',         desc:'Width 1200 mm — chassis in centre, plates on both sides' },
+    { code:'03000', label:'300 mm',       desc:'With mounting plates' },
+    { code:'06000', label:'600 mm',       desc:'With mounting plates' },
+    { code:'06LR0', label:'600 mm empty', desc:'No mounting plates' },
+    { code:'09L00', label:'900 mm left',  desc:'Left-oriented chassis\nPlates on the right' },
+    { code:'090R0', label:'900 mm right', desc:'Right-oriented chassis\nPlates on the left' },
+    { code:'12LR0', label:'1200 mm',      desc:'Any chassis\nPlates on both sides' },
   ],
   'EZR_OP': [
     { code:'06LR0', label:'600 mm LR',       desc:'Based on FR-06LR0, with added accessories' },
@@ -55,7 +70,6 @@ function getDeOptions(pr) {
 const AS_OPTIONS = [
   { code:'A', label:'Pre-assembled',   desc:'Delivered fully assembled' },
   { code:'B', label:'Quick-mount',     desc:'Partially assembled — fast on-site install' },
-  { code:'C', label:'Kit',             desc:'Fully disassembled — requires tools & fixtures' },
   { code:'E', label:'Two-box',          desc:'15DAS special: assembled, delivered in two boxes' },
 ];
 
@@ -737,7 +751,7 @@ function _renderCurrentCodeRow(code) {
 ══════════════════════════════════════════════════════ */
 let _wiz = { step: 1, totalSteps: 5, sel: {} };
 
-const WIZARD_STEPS_NOCL  = [1,2,3,6,7];
+const WIZARD_STEPS_NOCL  = [1,2,3,6];
 const WIZARD_STEPS_CL    = [1,2,3,4,5,6,7];
 
 function openWizard() {
@@ -774,11 +788,37 @@ function _wizRender() {
   const nextBtn = document.getElementById('wizNext');
   nextBtn.textContent = _wiz.step === _wiz.totalSteps ? 'Finish' : 'Next →';
 
-  const previewCode = buildCode({
-    pr: _wiz.sel.pr, he: _wiz.sel.he, de: _wiz.sel.de,
-    cov: _wiz.sel.cov, as: _wiz.sel.as, cl: _wiz.sel.cl
-  });
-  document.getElementById('wizCodePreview').textContent = previewCode || '…';
+  const s = _wiz.sel;
+  let covSeg = null;
+  if (s.de) {
+    if (s.pr !== 'EZR_CL') {
+      covSeg = 'D000B0S00T0';
+    } else if (s.doors || s.cov) {
+      const doorsCode = s.doors
+        ? (s.de === '15DAS'
+            ? `D${s.doors.ld||'0'}${s.doors.md||'0'}${s.doors.rd||'0'}`
+            : `D${s.doors.ld||'0'}0${s.doors.rd||'0'}`)
+        : 'D000';
+      const wallsCode = s.cov
+        ? `B${s.cov.bw||'0'}S${s.cov.sw||'00'}T${s.cov.tc||'0'}`
+        : 'B0S00T0';
+      covSeg = doorsCode + wallsCode;
+    }
+  }
+  const cl = s.pr !== 'EZR_CL' && s.as ? 'GY' : s.cl;
+  const allSegs = [
+    { value: s.pr,   label: 'Product'  },
+    { value: s.he,   label: 'Height'   },
+    { value: s.de,   label: 'Design'   },
+    { value: covSeg, label: 'Covering' },
+    { value: s.as,   label: 'Assembly' },
+    { value: cl,     label: 'Colour'   },
+  ].filter(seg => seg.value);
+  document.getElementById('wizCodePreview').innerHTML = allSegs.map(seg => `
+    <div class="wiz-code-segment">
+      <div class="wiz-seg-value">${seg.value}</div>
+      <div class="wiz-seg-label">${seg.label}</div>
+    </div>`).join('') || '…';
 }
 
 function _wizFillPanel(stepId) {
@@ -791,6 +831,10 @@ function _wizFillPanel(stepId) {
     document.querySelectorAll('[data-wiz-he]').forEach(el => {
       el.classList.toggle('selected', el.dataset.wizHe === sel.he);
     });
+    const pr = sel.pr || 'EZR_FR';
+    const img = document.getElementById('wizHeightImg');
+    img.src = `images/wizard/${pr}-heights.png`;
+    img.alt = pr;
   } else if (stepId === 3) {
     _renderWizDE();
   } else if (stepId === 4) {
@@ -817,15 +861,25 @@ function _wizFillPanel(stepId) {
 }
 
 function _renderWizDE() {
+  const pr = _wiz.sel.pr || 'EZR_FR';
   const container = document.getElementById('wizDEOptions');
-  const opts = getDeOptions(_wiz.sel.pr || 'EZR_FR');
+  const opts = getDeOptions(pr);
   container.innerHTML = opts.map(d => `
     <button class="wiz-de-card ${_wiz.sel.de === d.code ? 'selected' : ''}"
             onclick="_wizSelectDE('${d.code}')">
-      <div class="wiz-de-code">${d.code}</div>
       <div class="wiz-de-label">${d.label}</div>
       <div class="wiz-de-desc">${d.desc}</div>
     </button>`).join('');
+
+  const imgWrap = document.getElementById('wizDEImgWrap');
+  if (pr === 'EZR_FR' || pr === 'EZR_OP') {
+    document.getElementById('wizDEImg').src = `images/wizard/${pr}-designs.png`;
+    imgWrap.style.display = 'block';
+    container.classList.add('wiz-de-grid--row');
+  } else {
+    imgWrap.style.display = 'none';
+    container.classList.remove('wiz-de-grid--row');
+  }
 }
 
 function _renderWizCovDoors() {
@@ -958,15 +1012,16 @@ function _wizValidateStep(stepId) {
 
 function _wizFinish() {
   const s = _wiz.sel;
-  Cabinet.wizardSelections = { ...s };
+  if (s.pr !== 'EZR_CL') s.cl = 'GY';
   if (s.pr === 'EZR_CL' && !s.cov) s.cov = { ld:'0', rd:'0', bw:'0', sw:'00', tc:'0' };
+  Cabinet.wizardSelections = { ...s };
   const code = buildCode(s);
   if (!code) { showToast('Configuration incomplete', 'error'); return; }
   Cabinet.descriptionCode = code;
   Cabinet.isCodeValid     = true;
   _afterCodeComplete();
   closeModal('wizardModal');
-  showToast('Configuration set: ' + code, 'success');
+  useEZRConfig();
 }
 
 window._wizSelectDE = _wizSelectDE;
@@ -1263,24 +1318,6 @@ function exportBOM() {
   a.click();
   showToast('BOM exported as CSV','success');
 }
-
-/* ══════════════════════════════════════════════════════
-   PRESET CONFIGURATIONS
-══════════════════════════════════════════════════════ */
-
-const PRESET_CONFIGS = [
-  { order: '85280142', code: 'EZR_OP-46U-06LR0-D000B0S00T0-A-GY' },
-  { order: '85269549', code: 'EZR_OP-46U-09STL-D000B0S00T0-A-GY' },
-  { order: '85269555', code: 'EZR_OP-46U-09STR-D000B0S00T0-A-GY' },
-  { order: '85269565', code: 'EZR_OP-46U-12IFA-D000B0S00T0-A-GY' },
-  { order: '—',        code: 'EZR_OP-46U-15DAS-D000B0S00T0-E-GY' },
-  { order: '85274066', code: 'EZR_CL-46U-06LR0-DB00B1S11T1-A-BK' },
-  { order: '85274483', code: 'EZR_CL-46U-06LR0-DH00B1S11T1-A-BK' },
-  { order: '85268280', code: 'EZR_CL-46U-09STL-DB02B1S11T1-A-BK' },
-  { order: '85269556', code: 'EZR_CL-46U-09STR-D20BB1S11T1-A-BK' },
-  { order: '85269566', code: 'EZR_CL-46U-12IFA-DH0HB1S11T1-C-RD' },
-  { order: '85274607', code: 'EZR_CL-46U-15DAS-DH2HB1S11T1-E-BK' },
-];
 
 const ACCESSORY_CATALOG = [
   { code: 'EZR_CBFX',             label: 'Cable Fixator',         desc: 'Cable fixation plate' },
@@ -1930,6 +1967,7 @@ function _collapseStep1ToCode() {
     const el = document.querySelector(sel);
     if (el) el.style.display = 'none';
   });
+  document.getElementById('step1')?.classList.add('collapsed');
 }
 
 function _expandStep1() {
@@ -1937,9 +1975,6 @@ function _expandStep1() {
     const el = document.querySelector(sel);
     if (el) el.style.display = '';
   });
-  // presetGallery visibility controlled by its .open class — clear inline style only
-  const gallery = document.querySelector('#presetGallery');
-  if (gallery) gallery.style.display = '';
 }
 
 function useEZRConfig() {
@@ -1961,30 +1996,20 @@ const _presetThumbs  = {};  // code → dataURL cache
 let   _presetsActive = false;
 
 function togglePresetGallery() {
-  const gallery = document.getElementById('presetGallery');
-  const isOpen  = gallery.classList.contains('open');
-  if (isOpen) {
-    gallery.classList.remove('open');
-  } else {
-    gallery.classList.add('open');
-    _renderPresetGallery();
-  }
+  openModal('presetModal');
+  _renderPresetGallery();
 }
 
 
 function selectPreset(code) {
-  document.getElementById('presetGallery').classList.remove('open');
+  closeModal('presetModal');
   const parsed = parseCode(code);
   if (!parsed) { showToast('Invalid preset code', 'error'); return; }
   Cabinet.wizardSelections = parsed;
   Cabinet.noFadeNext = true;
   _applySelectionsToCode();
   setMode('code');
-  // Hide browse & wizard blocks — user picked a preset, only code editor remains
-  ['#browseBlock', '#wizardBlock'].forEach(sel => {
-    const el = document.querySelector(sel);
-    if (el) el.style.display = 'none';
-  });
+  useEZRConfig();
 }
 
 async function _renderPresetGallery() {
@@ -2007,7 +2032,7 @@ async function _renderPresetGallery() {
   // Render card skeletons immediately
   grid.innerHTML = PRESET_CONFIGS.map(p => `
     <div class="preset-card" onclick="selectPreset('${p.code}')">
-      <div class="preset-card-thumb" id="pthumb-${p.order}">
+      <div class="preset-card-thumb" id="pthumb-${p.code.replace(/[^\w]/g, '_')}">
         <div class="preset-thumb-spinner"></div>
         <button class="card-preview-btn" onclick="event.stopPropagation();openPreview('preset','${p.code}')" title="Preview 3D model">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -2022,21 +2047,21 @@ async function _renderPresetGallery() {
   // Render thumbnails one by one — try static file first, fall back to Three.js
   for (const p of PRESET_CONFIGS) {
     if (_presetThumbs[p.code]) {
-      _applyThumb(p.order, _presetThumbs[p.code]);
+      _applyThumb(p.code, _presetThumbs[p.code]);
       continue;
     }
     const staticSrc = `thumbnails/presets/${p.code.replace(/[^\w\-]/g, '_')}.jpg`;
     if (await _staticExists(staticSrc)) {
-      _applyThumb(p.order, staticSrc);
+      _applyThumb(p.code, staticSrc);
       _presetThumbs[p.code] = staticSrc;
       continue;
     }
     try {
       const dataURL = await _capturePresetThumb(p.code);
       _presetThumbs[p.code] = dataURL;
-      _applyThumb(p.order, dataURL);
+      _applyThumb(p.code, dataURL);
     } catch (e) {
-      const el = document.getElementById('pthumb-' + p.order);
+      const el = document.getElementById('pthumb-' + p.code.replace(/[^\w]/g, '_'));
       if (el) el.innerHTML = '<span style="font-size:10px;color:#aaa">—</span>';
     }
   }
@@ -2059,8 +2084,8 @@ async function _renderPresetGallery() {
   _presetsActive = false;
 }
 
-function _applyThumb(order, dataURL) {
-  const el = document.getElementById('pthumb-' + order);
+function _applyThumb(code, dataURL) {
+  const el = document.getElementById('pthumb-' + code.replace(/[^\w]/g, '_'));
   if (!el) return;
   const img = document.createElement('img');
   img.src = dataURL;
@@ -2104,7 +2129,7 @@ async function _capturePresetThumb(code, cam = {}) {
   CabinetControls.update();
 
   // Render at thumbnail resolution
-  const W = 512, H = 352;
+  const W = 1020, H = 720;
   const prevAspect = camera.aspect;
   const cssW = rdr.domElement.clientWidth  || 800;
   const cssH = rdr.domElement.clientHeight || 600;
@@ -2119,7 +2144,7 @@ async function _capturePresetThumb(code, cam = {}) {
   CabinetFloor.setVisible(true);
   if (window.CabinetArrow) CabinetArrow.setVisible(true);
   CabinetBuilder.setHighlightsVisible(true);
-  const dataURL = rdr.domElement.toDataURL('image/jpeg', 0.88);
+  const dataURL = rdr.domElement.toDataURL('image/jpeg', 0.92);
 
   // Restore renderer
   rdr.setSize(cssW, cssH, false);
@@ -2489,6 +2514,37 @@ function onGoToChassisStep() {
   }
 }
 
+/* ── Clone group sync ───────────────────────────────────────────────────
+ * After a cabinet is confirmed, copy its code/accessories/chassis to
+ * every other cabinet that shares the same cloneGroupId.
+ * Called with the index of the just-confirmed cabinet.
+ */
+function _syncCloneGroup(sourceIdx) {
+  const source = Cabinet.cabinets[sourceIdx];
+  if (!source?.cloneGroupId) return;
+
+  const targets = Cabinet.cabinets.filter(
+    (c, i) => i !== sourceIdx && c.cloneGroupId === source.cloneGroupId
+  );
+  if (!targets.length) return;
+
+  for (const target of targets) {
+    target.code              = source.code;
+    target.placedAccessories = source.placedAccessories.map(a => ({ ...a }));
+    target.placedChassis     = source.placedChassis.map(c => ({ ...c }));
+  }
+
+  // Full clear + rebuild so orphaned meshes from old clone state are removed.
+  // This is called only after editingIdx is set to -1, so clearAll is safe.
+  if (window.CabinetDrag)    CabinetDrag.clearAll();
+  if (window.CabinetChassis) CabinetChassis.clearAll();
+  if (window.CabinetBuilder?.rebuildAllCabinetsFromState) {
+    CabinetBuilder.rebuildAllCabinetsFromState();
+  }
+
+  showToast(`${targets.length} clone${targets.length > 1 ? 's' : ''} updated`, 'info');
+}
+
 function onReadyClick() {
   if (!Cabinet.isCodeValid || !Cabinet.descriptionCode || Cabinet.editingIdx < 0) {
     showToast('Configure a cabinet first', 'error'); return;
@@ -2530,6 +2586,9 @@ function onReadyClick() {
   Cabinet.isCodeValid       = false;
   Cabinet.wizardSelections  = {};
   _lastBuiltCode            = null;
+
+  // Propagate changes to all clones (after editingIdx reset, so clearAll is safe)
+  _syncCloneGroup(idx);
 
   _rebuildBOM();
   _resetForNextCabinet();

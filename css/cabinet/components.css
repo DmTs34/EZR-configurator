@@ -735,7 +735,16 @@ button:disabled, .btn:disabled {
 
 /* Wide modal for wizard */
 .modal-box-wide {
-  max-width: 680px;
+  max-width: 1200px;
+  min-height: 600px;
+  display: flex;
+  flex-direction: column;
+}
+.modal-box-gallery {
+  max-width: 1200px;
+  height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
 }
 
 /* Preview modal */
@@ -899,7 +908,7 @@ button:disabled, .btn:disabled {
 }
 
 /* Wizard panel (one shown at a time) */
-.wiz-panel { min-height: 200px; }
+.wiz-panel { min-height: 400px; }
 
 .wiz-question {
   font-size: 15px;
@@ -927,21 +936,24 @@ button:disabled, .btn:disabled {
   gap: 6px;
   background: #fff;
   text-align: center;
+  position: relative;
   font-family: inherit;
 }
-.wiz-pr-card:hover  { border-color: var(--color-primary); background: var(--color-primary-light); }
+.wiz-pr-card:hover  { border-color: var(--color-primary); border-width: 4px; background: #fff; }
 .wiz-pr-card.selected {
   border-color: var(--color-primary);
-  background: var(--color-primary-light);
-  box-shadow: 0 0 0 3px rgba(101,184,165,0.25);
+  border-width: 4px;
+  background: #fff;
 }
 
 .wiz-pr-icon  { font-size: 28px; line-height: 1; }
+.wiz-pr-icon img { width: 300px; height: 380px; object-fit: cover; display: block; margin: 0 auto; }
 .wiz-pr-label { font-size: 14px; font-weight: 700; color: var(--color-text); }
-.wiz-pr-code  { font-size: 10px; font-family: monospace; font-weight: 700;
+.wiz-pr-code  { font-size: 15px; font-family: monospace; font-weight: 700;
                 background: rgba(0,0,0,0.06); padding: 2px 6px; border-radius: 3px;
-                color: var(--color-text-secondary); }
-.wiz-pr-desc  { font-size: 11px; color: var(--color-text-secondary); line-height: 1.4; }
+                color: var(--color-text-secondary);
+                position: absolute; top: 10px; left: 10px; }
+.wiz-pr-desc  { font-size: 16px; color: var(--color-text-secondary); line-height: 1.4; }
 
 /* ── Height options ─────────────────────────────────── */
 .wiz-options-row {
@@ -949,7 +961,53 @@ button:disabled, .btn:disabled {
   flex-wrap: wrap;
   gap: 8px;
 }
-.wiz-options-row .wizard-option { padding: 8px 20px; font-size: 13px; }
+.wiz-options-row .wizard-option {
+  padding: 8px 20px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.wiz-he-mm {
+  font-size: 13px;
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.wiz-code-segment {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.wiz-seg-value {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: monospace;
+  background: var(--color-primary-light);
+  color: var(--color-primary-hover);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.wiz-seg-label {
+  font-size: 9px;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.wiz-he-img-wrap {
+  margin-top: 20px;
+  text-align: center;
+}
+.wiz-he-img-wrap img {
+  max-width: 100%;
+  max-height: 340px;
+  object-fit: contain;
+}
 
 /* ── Design cards ───────────────────────────────────── */
 .wiz-de-grid {
@@ -960,31 +1018,57 @@ button:disabled, .btn:disabled {
   overflow-y: auto;
   padding-right: 4px;
 }
+.wiz-de-grid--row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
+}
 
 .wiz-de-card {
+  padding: 5px 12px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 10px 12px;
+  border-radius: 14px;
+  font-size: 11px;
+  font-family: inherit;
   cursor: pointer;
   transition: var(--transition);
+  background: #f8f8f8;
+  color: var(--color-text-secondary);
+  font-weight: 600;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   text-align: left;
-  background: #fff;
-  font-family: inherit;
 }
-.wiz-de-card:hover  { border-color: var(--color-primary); background: var(--color-primary-light); }
-.wiz-de-card.selected {
-  border-color: var(--color-primary);
+.wiz-de-grid--row .wiz-de-card { flex: 1 1 0; min-width: 0; white-space: normal; }
+.wiz-de-card:hover {
   background: var(--color-primary-light);
-  box-shadow: 0 0 0 2px rgba(101,184,165,0.25);
+  border-color: var(--color-primary);
+  color: var(--color-primary-hover);
+}
+.wiz-de-card.selected {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
 }
 
 .wiz-de-code  { font-size: 12px; font-weight: 700; font-family: monospace;
                 color: var(--color-primary-hover); letter-spacing: 0.04em; }
-.wiz-de-label { font-size: 12px; font-weight: 700; color: var(--color-text); }
-.wiz-de-desc  { font-size: 10px; color: var(--color-text-secondary); line-height: 1.4; }
+.wiz-de-label { font-size: 13px; font-weight: 600; color: var(--color-text); }
+.wiz-de-desc  { font-size: 13px; font-weight: 400; color: var(--color-text-secondary); line-height: 1.4; white-space: pre-line; opacity: 0.7; }
+
+.wiz-de-img-wrap {
+  margin-top: 16px;
+  text-align: center;
+}
+.wiz-de-img-wrap img {
+  max-width: 100%;
+  max-height: 300px;
+  object-fit: contain;
+}
 
 /* ── Covering section ───────────────────────────────── */
 .wiz-cov-section { display: flex; flex-direction: column; gap: 2px; }
@@ -1074,19 +1158,16 @@ button:disabled, .btn:disabled {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #f4f4f4;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  padding: 6px 0;
   flex: 1;
   min-width: 0;
   overflow: hidden;
 }
 .wiz-code-label { font-size: 10px; font-weight: 700; color: var(--color-text-secondary);
                   text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
-.wiz-code-value { font-size: 12px; font-family: monospace; font-weight: 700;
-                  color: var(--color-dark); letter-spacing: 0.04em;
-                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wiz-code-value { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
 
 .wiz-nav { display: flex; gap: 8px; flex-shrink: 0; }
 
@@ -1121,20 +1202,28 @@ button:disabled, .btn:disabled {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+.preset-gallery-center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
 .preset-cards-row {
   display: flex;
   gap: 8px;
   overflow-x: auto;
-  padding: 4px 12px 8px;
+  padding: 4px 0 8px;
   scrollbar-width: thin;
   scrollbar-color: #d0d0d0 transparent;
+  align-items: flex-start;
 }
 .preset-cards-row::-webkit-scrollbar       { height: 4px; }
 .preset-cards-row::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 2px; }
 
 .preset-card {
   flex-shrink: 0;
-  width: 256px;
+  width: 510px;
   background: var(--color-surface);
   border: 1.5px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -1142,6 +1231,11 @@ button:disabled, .btn:disabled {
   overflow: hidden;
   transition: var(--transition);
 }
+.preset-card.acc-card,
+.preset-card.cha-card { width: 256px; }
+.preset-card.acc-card .preset-card-thumb,
+.preset-card.cha-card .preset-card-thumb { width: 256px; height: 176px; }
+
 .preset-card:hover {
   border-color: var(--color-primary);
   box-shadow: 0 2px 8px rgba(101,184,165,0.18);
@@ -1150,8 +1244,8 @@ button:disabled, .btn:disabled {
 
 .preset-card-thumb {
   position: relative;
-  width: 256px;
-  height: 176px;
+  width: 510px;
+  height: 360px;
   background: #f4f4f4;
   display: flex;
   align-items: center;

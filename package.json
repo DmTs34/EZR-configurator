@@ -11,5 +11,8 @@
   "license": "ISC",
   "dependencies": {
     "puppeteer": "^24.40.0"
+  },
+  "devDependencies": {
+    "sharp": "^0.32.6"
   }
 }

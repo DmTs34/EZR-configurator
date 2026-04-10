@@ -1,0 +1,120 @@
+{
+  "projectName": "New Project",
+  "savedAt": "2026-04-09T20:50:15.697Z",
+  "camera": {
+    "theta": -0.0016814692820413726,
+    "phi": 1.4984738152191122,
+    "radius": 5.640000000000001,
+    "target": {
+      "x": 3.015836288173379,
+      "y": 1.2956400000000001,
+      "z": 0.3020615534668576
+    }
+  },
+  "rows": [
+    {
+      "id": 0,
+      "origin": {
+        "x": 0,
+        "z": 0
+      },
+      "angle": 0,
+      "flipped": false
+    },
+    {
+      "id": 1,
+      "origin": {
+        "x": 600,
+        "z": 0
+      },
+      "angle": 0,
+      "flipped": false
+    },
+    {
+      "id": 2,
+      "origin": {
+        "x": 1500,
+        "z": 0
+      },
+      "angle": 0,
+      "flipped": false
+    },
+    {
+      "id": 3,
+      "origin": {
+        "x": 2400,
+        "z": 0
+      },
+      "angle": 0,
+      "flipped": false
+    },
+    {
+      "id": 4,
+      "origin": {
+        "x": 3600,
+        "z": 0
+      },
+      "angle": 0,
+      "flipped": false
+    },
+    {
+      "id": 5,
+      "origin": {
+        "x": 4800,
+        "z": 0
+      },
+      "angle": 0,
+      "flipped": false
+    }
+  ],
+  "cabinets": [
+    {
+      "code": "EZR_FR-46U-03000-D000B0S00T0-A-GY",
+      "xOffset": 0,
+      "rowIdx": 0,
+      "label": "ODF #1",
+      "placedAccessories": [],
+      "placedChassis": []
+    },
+    {
+      "code": "EZR_FR-46U-06000-D000B0S00T0-A-GY",
+      "xOffset": 0,
+      "rowIdx": 1,
+      "label": "ODF #2",
+      "placedAccessories": [],
+      "placedChassis": []
+    },
+    {
+      "code": "EZR_FR-46U-06LR0-D000B0S00T0-A-GY",
+      "xOffset": 0,
+      "rowIdx": 2,
+      "label": "ODF #3",
+      "placedAccessories": [],
+      "placedChassis": []
+    },
+    {
+      "code": "EZR_FR-46U-09L00-D000B0S00T0-A-GY",
+      "xOffset": 0,
+      "rowIdx": 3,
+      "label": "ODF #4",
+      "placedAccessories": [],
+      "placedChassis": []
+    },
+    {
+      "code": "EZR_FR-46U-090R0-D000B0S00T0-A-GY",
+      "xOffset": 0,
+      "rowIdx": 4,
+      "label": "ODF #5",
+      "placedAccessories": [],
+      "placedChassis": []
+    },
+    {
+      "code": "EZR_FR-46U-12LR0-D000B0S00T0-A-GY",
+      "xOffset": 0,
+      "rowIdx": 5,
+      "label": "ODF #6",
+      "placedAccessories": [],
+      "placedChassis": []
+    }
+  ]
+}

@@ -1303,5 +1303,6 @@ window.CabinetChassis = (function () {
     renderThumbs,
     captureThumb,
     CHASSIS_CATALOG,
+    _isDragging: () => _dragging,
   };
 })();

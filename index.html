@@ -46,17 +46,14 @@
       </div>
       <div class="step-content">
 
-        <!-- Block 1: Browse Configurations -->
-        <div id="browseBlock" style="margin-bottom:8px">
-          <button class="btn btn-primary btn-block" onclick="togglePresetGallery()">Browse Configurations</button>
-          <div id="presetGallery" class="preset-gallery">
-            <div class="preset-cards-row" id="presetGrid"></div>
-          </div>
-        </div>
-
-        <!-- Block 2: Q&A Wizard -->
+        <!-- Block 1: Q&A Wizard -->
         <div id="wizardBlock" style="margin-bottom:8px">
           <button class="btn btn-primary btn-block" onclick="openWizard()">Q&amp;A Wizard ›</button>
+        </div>
+
+        <!-- Block 2: Browse Configurations -->
+        <div id="browseBlock" style="margin-bottom:8px">
+          <button class="btn btn-primary btn-block" onclick="togglePresetGallery()">Browse Configurations</button>
         </div>
 
         <!-- Block 3: Code Editor (always visible) -->
@@ -93,7 +90,7 @@
     <div class="step collapsed locked" id="step2">
       <div class="step-header" onclick="toggleStep('step2')">
         <div class="step-num">2</div>
-        <div class="step-title">Accessories</div>
+        <div class="step-title">Extra accessories</div>
         <div class="step-chevron">▾</div>
       </div>
       <div class="step-content">
@@ -235,22 +232,22 @@
       <div class="wiz-question">What type of cabinet do you need?</div>
       <div class="wiz-pr-grid">
         <button class="wiz-pr-card" data-wiz-pr="EZR_FR" onclick="wizSelectPR('EZR_FR')">
-          <div class="wiz-pr-icon">⬜</div>
-          <div class="wiz-pr-label">Frame</div>
+          <div class="wiz-pr-icon"><img src="images/wizard/EZR_FR.png" alt="EZR_FR"></div>
+          <div class="wiz-pr-label">EZR Frame</div>
           <div class="wiz-pr-code">EZR_FR</div>
-          <div class="wiz-pr-desc">Open frame — no doors, no internal accessories</div>
+          <div class="wiz-pr-desc">Bare steel frame, fully open — total configuration freedom</div>
         </button>
         <button class="wiz-pr-card" data-wiz-pr="EZR_OP" onclick="wizSelectPR('EZR_OP')">
-          <div class="wiz-pr-icon">🔲</div>
-          <div class="wiz-pr-label">Open</div>
+          <div class="wiz-pr-icon"><img src="images/wizard/EZR_OP.png" alt="EZR_OP"></div>
+          <div class="wiz-pr-label">EZR Open</div>
           <div class="wiz-pr-code">EZR_OP</div>
-          <div class="wiz-pr-desc">No doors, with predefined internal accessories</div>
+          <div class="wiz-pr-desc">Pre-fitted internals, open front — ready for rapid equipment installation</div>
         </button>
         <button class="wiz-pr-card" data-wiz-pr="EZR_CL" onclick="wizSelectPR('EZR_CL')">
-          <div class="wiz-pr-icon">🔳</div>
-          <div class="wiz-pr-label">Closed</div>
+          <div class="wiz-pr-icon"><img src="images/wizard/EZR_CL.png" alt="EZR_CL"></div>
+          <div class="wiz-pr-label">EZR Closed</div>
           <div class="wiz-pr-code">EZR_CL</div>
-          <div class="wiz-pr-desc">Frame or Open with doors, side walls, roof &amp; floor</div>
+          <div class="wiz-pr-desc">Fully enclosed with doors, side panels, roof &amp; floor — secure and dust-protected</div>
         </button>
       </div>
     </div>
@@ -259,12 +256,15 @@
     <div class="wiz-panel" id="wizPanel2" style="display:none">
       <div class="wiz-question">Select cabinet height</div>
       <div class="wiz-options-row">
-        <button class="wizard-option" data-wiz-he="18U" onclick="wizSelectHE('18U')">18U</button>
-        <button class="wizard-option" data-wiz-he="22U" onclick="wizSelectHE('22U')">22U</button>
-        <button class="wizard-option" data-wiz-he="38U" onclick="wizSelectHE('38U')">38U</button>
-        <button class="wizard-option" data-wiz-he="42U" onclick="wizSelectHE('42U')">42U</button>
-        <button class="wizard-option" data-wiz-he="46U" onclick="wizSelectHE('46U')">46U</button>
-        <button class="wizard-option" data-wiz-he="50U" onclick="wizSelectHE('50U')">50U</button>
+        <button class="wizard-option" data-wiz-he="18U" onclick="wizSelectHE('18U')">18U<span class="wiz-he-mm">870 mm</span></button>
+        <button class="wizard-option" data-wiz-he="22U" onclick="wizSelectHE('22U')">22U<span class="wiz-he-mm">1050 mm</span></button>
+        <button class="wizard-option" data-wiz-he="38U" onclick="wizSelectHE('38U')">38U<span class="wiz-he-mm">1770 mm</span></button>
+        <button class="wizard-option" data-wiz-he="42U" onclick="wizSelectHE('42U')">42U<span class="wiz-he-mm">1950 mm</span></button>
+        <button class="wizard-option" data-wiz-he="46U" onclick="wizSelectHE('46U')">46U<span class="wiz-he-mm">2130 mm</span></button>
+        <button class="wizard-option" data-wiz-he="50U" onclick="wizSelectHE('50U')">50U<span class="wiz-he-mm">2310 mm</span></button>
+      </div>
+      <div class="wiz-he-img-wrap">
+        <img id="wizHeightImg" src="" alt="">
       </div>
     </div>
 
@@ -273,6 +273,9 @@
       <div class="wiz-question">Select a design configuration</div>
       <div class="wiz-de-grid" id="wizDEOptions">
         <!-- Filled by JS -->
+      </div>
+      <div class="wiz-de-img-wrap" id="wizDEImgWrap" style="display:none">
+        <img id="wizDEImg" src="" alt="">
       </div>
     </div>
 
@@ -307,12 +310,6 @@
           <div class="wiz-as-label">Quick-mount</div>
           <div class="wiz-as-code">AS = B</div>
           <div class="wiz-as-desc">Partially assembled — fast on-site install</div>
-        </button>
-        <button class="wiz-as-card" data-wiz-as="C" onclick="wizSelectAS('C')" style="display:none">
-          <div class="wiz-as-icon">🗃️</div>
-          <div class="wiz-as-label">Kit</div>
-          <div class="wiz-as-code">AS = C</div>
-          <div class="wiz-as-desc">Fully disassembled — requires tools &amp; fixtures</div>
         </button>
         <button class="wiz-as-card" data-wiz-as="E" onclick="wizSelectAS('E')" style="display:none">
           <div class="wiz-as-icon">📫</div>
@@ -365,6 +362,21 @@
 
   </div>
 </div><!-- /wizardModal -->
+
+<!-- ════════════════════════════════════════════════════
+     PRESET GALLERY MODAL
+════════════════════════════════════════════════════ -->
+<div class="modal" id="presetModal">
+  <div class="modal-box modal-box-wide">
+    <div class="modal-header">
+      <h2 class="modal-title">Browse Configurations</h2>
+      <button class="modal-close" onclick="closeModal('presetModal')">✕</button>
+    </div>
+    <div class="preset-gallery-center">
+      <div class="preset-cards-row" id="presetGrid"></div>
+    </div>
+  </div>
+</div>
 
 <!-- Preview modal -->
 <div class="modal" id="previewModal" onclick="closePreview()">

@@ -45,6 +45,8 @@ window.CabinetArrow = (function () {
 
   // Per-arrow state: [{ mesh, labelEl, rowIdx }]
   const _arrows = [];
+  const _arrowTmpVec = new THREE.Vector3(); // reused every frame — avoid per-frame alloc
+  let _arrowCanvasRect = null;              // cached getBoundingClientRect
 
   // Drag state
   let _dragging    = false;
@@ -94,6 +96,14 @@ window.CabinetArrow = (function () {
     if (canvas?.parentElement) {
       canvas.parentElement.style.position = 'relative';
       canvas.parentElement.appendChild(_labelContainer);
+    }
+    // Cache canvas rect; refresh on resize
+    _arrowCanvasRect = (_canvas ?? document.body).getBoundingClientRect();
+    const target = canvas?.parentElement ?? canvas;
+    if (target) {
+      new ResizeObserver(() => {
+        _arrowCanvasRect = (_canvas ?? document.body).getBoundingClientRect();
+      }).observe(target);
     }
   }
 
@@ -185,6 +195,17 @@ window.CabinetArrow = (function () {
     _arrows[rowIdx] = null;
   }
 
+  // Remove all arrows and respawn one per Cabinet.rows entry.
+  // Called after loading a config to sync arrow state with row state.
+  function rebuildAll() {
+    // Remove all existing arrows
+    for (let i = 0; i < _arrows.length; i++) _removeArrow(i);
+    _arrows.length = 0;
+    // Spawn fresh arrows for every row in current state
+    for (let i = 0; i < Cabinet.rows.length; i++) _spawnArrow(i);
+    _refreshActiveIndicators();
+  }
+
   /* ── Transform ────────────────────────────────────── */
   function _applyTransform(rowIdx) {
     const entry = _arrows[rowIdx];
@@ -202,16 +223,14 @@ window.CabinetArrow = (function () {
   ─────────────────────────────────────────────────── */
   function updateLabels() {
     if (!_labelContainer || !Cabinet.camera) return;
-    const canvas = _canvas;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
+    if (!_arrowCanvasRect) return;
+    const rect = _arrowCanvasRect;
     for (const entry of _arrows) {
       if (!entry?.labelEl || !entry.mesh) continue;
-      const pos = entry.mesh.position.clone();
-      const v   = pos.project(Cabinet.camera);
-      const x   = (v.x + 1) / 2 * rect.width;
-      const y   = (-v.y + 1) / 2 * rect.height;
-      entry.labelEl.style.display = (v.z > 1) ? 'none' : 'block';
+      _arrowTmpVec.copy(entry.mesh.position).project(Cabinet.camera);
+      const x = (_arrowTmpVec.x + 1) / 2 * rect.width;
+      const y = (-_arrowTmpVec.y + 1) / 2 * rect.height;
+      entry.labelEl.style.display = (_arrowTmpVec.z > 1) ? 'none' : 'block';
       entry.labelEl.style.left    = x + 'px';
       entry.labelEl.style.top     = y + 'px';
     }
@@ -508,6 +527,7 @@ window.CabinetArrow = (function () {
     menu.appendChild(item('Flip cabinets 180°',  null,      () => _flipRow(rowIdx)));
     menu.appendChild(sep());
     menu.appendChild(item('Add row',             null,      () => _addRow(rowIdx)));
+    menu.appendChild(item('Duplicate row',       null,      () => _duplicateRow(rowIdx)));
     menu.appendChild(sep());
     menu.appendChild(item('Delete row',          '#c0392b', () => _confirmDeleteRow(rowIdx)));
 
@@ -572,6 +592,75 @@ window.CabinetArrow = (function () {
     showToast(`Row ${newRowIdx + 1} added — now editing row ${newRowIdx + 1}`, 'success');
   }
 
+  async function _duplicateRow(fromRowIdx) {
+    const fromRow   = Cabinet.rows[fromRowIdx];
+    const newRowIdx = Cabinet.rows.length;
+
+    // Find first non-overlapping offset perpendicular to the row direction.
+    // Start at 2 tiles; if occupied, step by 2.5 tiles until free.
+    let tiles = OFFSET_TILES;
+    let candidateOrigin;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const off = tiles * TILE_MM;
+      candidateOrigin = {
+        x: fromRow.origin.x + (fromRow.angle === 1 ? off : 0),
+        z: fromRow.origin.z + (fromRow.angle === 0 ? off : 0),
+      };
+      // Temporarily register the row to use _wouldOverlap
+      Cabinet.rows.push({ id: newRowIdx, origin: candidateOrigin, angle: fromRow.angle, flipped: fromRow.flipped });
+      const overlaps = _wouldOverlap(newRowIdx, candidateOrigin);
+      Cabinet.rows.pop();
+      if (!overlaps) break;
+      tiles += 2.5;
+    }
+
+    Cabinet.rows.push({
+      id:      newRowIdx,
+      origin:  candidateOrigin,
+      angle:   fromRow.angle,
+      flipped: fromRow.flipped,
+    });
+
+    // Find highest ODF number across all existing cabinets
+    let maxODF = 0;
+    for (const cab of Cabinet.cabinets) {
+      const m = cab.label?.match(/^ODF #(\d+)$/);
+      if (m) maxODF = Math.max(maxODF, parseInt(m[1]));
+    }
+
+    // Deep-copy all cabinets from source row, assigned to new row with fresh labels
+    const sourceCabs = Cabinet.cabinets.filter(c => (c.rowIdx ?? 0) === fromRowIdx);
+    for (const cab of sourceCabs) {
+      Cabinet.cabinets.push({
+        ...cab,
+        rowIdx:            newRowIdx,
+        label:             `ODF #${++maxODF}`,
+        placedAccessories: (cab.placedAccessories || []).map(a => ({ ...a })),
+        placedChassis:     (cab.placedChassis     || []).map(c => ({ ...c })),
+      });
+    }
+
+    // Rebuild 3D scene (includes accessories and chassis via rebuildFromState)
+    await CabinetBuilder.rebuildAllCabinetsFromState();
+
+    // Switch active row to the new one, position next cabinet at its right edge
+    Cabinet.activeRowIdx = newRowIdx;
+    let maxX = 0;
+    for (const cab of Cabinet.cabinets) {
+      if ((cab.rowIdx ?? 0) !== newRowIdx) continue;
+      const p = CabinetBuilder.parseCode(cab.code);
+      if (p) maxX = Math.max(maxX, cab.xOffset + p.widthMM);
+    }
+    Cabinet.currentCabinetXOffset = maxX;
+
+    _refreshActiveIndicators();
+    _spawnArrow(newRowIdx);
+    if (window.CabinetFloor) CabinetFloor.update();
+    if (window.CabinetArrow) CabinetArrow.updateLabels?.();
+    if (typeof _rebuildBOM === 'function') _rebuildBOM();
+    showToast(`Row ${newRowIdx + 1} duplicated from row ${fromRowIdx + 1}`, 'success');
+  }
+
   function _confirmDeleteRow(rowIdx) {
     const rowNum = rowIdx + 1;
     const cabCount = Cabinet.cabinets.filter(c => (c.rowIdx ?? 0) === rowIdx).length;
@@ -629,6 +718,6 @@ window.CabinetArrow = (function () {
   }
 
   /* ── Public ───────────────────────────────────────── */
-  return { init, updateLabels, refreshActiveIndicators: _refreshActiveIndicators, setVisible };
+  return { init, updateLabels, rebuildAll, refreshActiveIndicators: _refreshActiveIndicators, setVisible };
 
 })();

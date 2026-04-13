@@ -119,6 +119,18 @@ window.CabinetBuilder = (function () {
     '12LR0': [7.5, 907.5],
   };
 
+  /** Which C-FRM frame indices (0=left, 1=right) are free of mounting plates.
+      Keyed by base design code (DE_FR_BASE is applied before lookup).
+      Derived codes (e.g. 09DAR → 090R0) inherit via DE_FR_BASE automatically. */
+  const CFRM_FREE_FRAMES = {
+    '03000': [],
+    '06000': [],
+    '09L00': [0],
+    '090R0': [1],
+    '12LR0': [],
+    '06LR0': [0, 1],
+  };
+
   /** Vertical offset applied to first mounting plate Y position (mm).
       Ensures proper spacing between foot and first plate. */
   const MOUT_PLT_OFFSET_Y = {
@@ -151,6 +163,72 @@ window.CabinetBuilder = (function () {
     'B6+53': { x: 195.5, y:  22.2, z: 1.5 },  // B6 shifted right by 53mm (for horiz plates)
   };
 
+  /** Attachment point coordinates local to each C-FRM (C-shaped vertical frame profile).
+      Keyed by cabinet height (U value, e.g. 46 matches EZR_C_FRM-46-NT.glb).
+      Coordinates are relative to the origin of each individual C-FRM model.
+      Used for accessories that mount directly onto the C-FRM (e.g. EZR_CBFX). */
+  const CFRM_ATTACH_PTS = {
+    50: { 'C-FRM-1': { x: 20, y: 2200, z: 40 }, 'C-FRM-2': { x: 20, y: 1700, z: 40 }, 'C-FRM-3': { x: 20, y: 1200, z: 40 }, 'C-FRM-4': { x: 20, y: 700, z: 40 }, 'C-FRM-5': { x: 20, y: 200, z: 40 }},
+    46: { 'C-FRM-1': { x: 20, y: 2020, z: 40 }, 'C-FRM-2': { x: 20, y: 1520, z: 40 }, 'C-FRM-3': { x: 20, y: 1020, z: 40 } , 'C-FRM-4': { x: 20, y: 520, z: 40 }},
+    42: { 'C-FRM-1': { x: 20, y: 1840, z: 40 }, 'C-FRM-2': { x: 20, y: 1340, z: 40 }, 'C-FRM-3': { x: 20, y: 840, z: 40 } , 'C-FRM-4': { x: 20, y: 340, z: 40 }},
+    38: { 'C-FRM-1': { x: 20, y: 1660, z: 40 }, 'C-FRM-2': { x: 20, y: 1160, z: 40 }, 'C-FRM-3': { x: 20, y: 660, z: 40 } , 'C-FRM-4': { x: 20, y: 160, z: 40 }},
+    22: { 'C-FRM-1': { x: 20, y: 940, z: 40 }, 'C-FRM-2': { x: 20, y: 525, z: 40 }, 'C-FRM-3': { x: 20, y: 110, z: 40 }  },
+    18: { 'C-FRM-1': { x: 20, y: 760, z: 40 }, 'C-FRM-2': { x: 20, y: 435, z: 40 }, 'C-FRM-3': { x: 20, y: 110, z: 40 }   },
+  };
+
+/** Valid attachment points for each accessory type.
+      Maps component filename to array of valid point labels. */
+  const _ACC_SNAP_PTS = {
+    'EZR_MDL-L87-NT':        ['A2','A3','A4','A5','A6','B2','B3','B4','B5','B6','C2','C3','C4','C5','C6'],
+    'EZR_MDL-L224-NT':       ['A2','A3','A4','A5','A6','B2','B3','B4','B5','B6','C2','C3','C4','C5','C6'],
+    'EZR_CBFX':              ['A2','A3','A4','A5','A6','B2','B3','B4','B5','B6','C2','C3','C4','C5','C6', 'ret-L', 'ret-R', 'C-FRM-1','C-FRM-2','C-FRM-3','C-FRM-4','C-FRM-5'],
+    'EZR_RET':               ['ret-L','ret-R', 'C-FRM-1','C-FRM-2','C-FRM-3','C-FRM-4','C-FRM-5'],
+    'EZR_ROUT-BRKT':         ['A6', 'A1'],
+    'EZR_SEP_PLT-4U':        ['A5','B5','C5', 'C-FRM-1','C-FRM-2','C-FRM-3','C-FRM-4','C-FRM-5'],
+    'EZR_SEP_PLT-4U-horiz':  ['B6', 'B6-53', 'B6+53'],
+    'EZR_SEP_PLT-4U-R':      ['C5'],
+    'EZR_TBRKT':             ['A5','A6','B5','B6','C5','C6','ret-L','ret-R', 'C-FRM-1','C-FRM-2','C-FRM-3','C-FRM-4','C-FRM-5'],
+    'EZR_CAB_EXT':           ['cab-ext-L','cab-ext-M','cab-ext-R'],
+  };
+
+  /** Child snap points on accessories (local mm), for acc-on-acc attachment. */
+  const _ACC_CHILD_SNAP_PTS = {
+    'EZR_ROUT-BRKT': [
+      { id: 'rout-plt-0', x: 92, y: -22.2, z: 70  },
+      { id: 'rout-plt-1', x: 92, y: -22.2, z: 186 },
+    ],
+  };
+
+  /** Child snap points on chassis (local mm, base coords before DE offset).
+      For acc-on-chassis attachment. */
+  const _CHASSIS_CHILD_SNAP_PTS = {
+    'Chassis-EZR_ROUT-BRKT': [
+      { id: 'rout-plt-0', x: 25,  y: 2, z: 96  },
+      { id: 'rout-plt-1', x: 25,  y: 2, z: 212 },
+      { id: 'rout-plt-2', x: 324, y: 2, z: 96  },
+      { id: 'rout-plt-3', x: 324, y: 2, z: 212 },
+    ],
+  };
+
+  /** X offset (mm) added to Chassis-EZR_ROUT-BRKT child snap X coords per DE code.
+      DEs not listed (03000, 06000, etc.) have no chassis rail → no snap points. */
+  const _CHASSIS_PLT_X_OFFSET_BY_DE = {
+    '06LR0': 80,
+    '09L00': 40,
+    '090R0': 120,
+    '09STL': 40,
+    '09STR': 120,
+    '09DAR': 120,
+    '12LR0': 80,
+    '12IFA': 80,
+    '12STM': 80,
+  };
+
+  /** Maps an accessory type to the parent type it attaches to (acc-on-acc or acc-on-chassis).
+      Values can be an accessory code OR a chassis code. */
+  const _ACC_PARENT_TYPE = {
+    'EZR_ROUT-PLT': ['EZR_ROUT-BRKT', 'Chassis-EZR_ROUT-BRKT'],
+  };
   /** Accessory designs mapped to plate attachment points.
       Key = design name (e.g., 'AL', 'BL1'), Value = array of components.
       Components: { glb: filename, pt: attachment point, rotZ?: radians, offsetY?: mm } */
@@ -203,16 +281,16 @@ window.CabinetBuilder = (function () {
       { glb: 'EZR_SEP_PLT-4U-horiz.glb', pt: 'B6-53' },
     ],
     'GM': [
-      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B1' },
-      { glb: 'EZR_MDL-L87-NT.glb', pt: 'A5', rotZ: Math.PI },
-      { glb: 'EZR_MDL-L87-NT.glb', pt: 'C5', rotZ: Math.PI },
+      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B2' },
+      { glb: 'EZR_MDL-L87-NT.glb', pt: 'A4', rotZ: Math.PI },
+      { glb: 'EZR_MDL-L87-NT.glb', pt: 'C4', rotZ: Math.PI },
     ],
     'HM': [
-      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B1' },
-      { glb: 'EZR_MDL-L87-NT.glb', pt: 'A2' },
-      { glb: 'EZR_MDL-L87-NT.glb', pt: 'C2' },
-      { glb: 'EZR_MDL-L87-NT.glb', pt: 'A5', rotZ: Math.PI },
-      { glb: 'EZR_MDL-L87-NT.glb', pt: 'C5', rotZ: Math.PI },
+      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B2' },
+      { glb: 'EZR_MDL-L87-NT.glb', pt: 'A3' },
+      { glb: 'EZR_MDL-L87-NT.glb', pt: 'C3' },
+      { glb: 'EZR_MDL-L87-NT.glb', pt: 'A4', rotZ: Math.PI },
+      { glb: 'EZR_MDL-L87-NT.glb', pt: 'C4', rotZ: Math.PI },
     ],
     'KM': [
       { glb: 'EZR_MDL-L224-NT.glb', pt: 'B1', rotZ: Math.PI },
@@ -255,29 +333,29 @@ window.CabinetBuilder = (function () {
     // IFA-series designs
     'EL': [
       { glb: 'EZR_SEP_PLT-4U.glb', pt: 'A5' },
-      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B2' },
-      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B5', rotZ: Math.PI },
-      { glb: 'EZR_MDL-L87-NT.glb', pt: 'C5', rotZ: Math.PI },
+      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B3' },
+      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B4', rotZ: Math.PI },
+      { glb: 'EZR_MDL-L87-NT.glb', pt: 'C4' },
       { glb: 'EZR_RET.glb', pt: 'ret-L' },
     ],
     'ER': [
       { glb: 'EZR_SEP_PLT-4U-R.glb', pt: 'C5' },
-      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B2' },
-      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B5', rotZ: Math.PI },
-      { glb: 'EZR_MDL-L87-NT.glb', pt: 'A5', rotZ: Math.PI },
+      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B3' },
+      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B4', rotZ: Math.PI },
+      { glb: 'EZR_MDL-L87-NT.glb', pt: 'A4' },
       { glb: 'EZR_RET.glb', pt: 'ret-R' },
     ],
     'FL': [
       { glb: 'EZR_MDL-L224-NT.glb', pt: 'A1', rotZ: Math.PI },
-      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B2' },
-      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B5', rotZ: Math.PI },
-      { glb: 'EZR_MDL-L87-NT.glb', pt: 'C5', rotZ: Math.PI },
+      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B3' },
+      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B4', rotZ: Math.PI },
+      { glb: 'EZR_MDL-L87-NT.glb', pt: 'C4' },
     ],
     'FR': [
       { glb: 'EZR_MDL-L224-NT.glb', pt: 'C1', rotZ: Math.PI },
-      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B2' },
-      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B5', rotZ: Math.PI },
-      { glb: 'EZR_MDL-L87-NT.glb', pt: 'A5', rotZ: Math.PI },
+      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B3' },
+      { glb: 'EZR_MDL-L224-NT.glb', pt: 'B4', rotZ: Math.PI },
+      { glb: 'EZR_MDL-L87-NT.glb', pt: 'A4' },
     ],
   };
 
@@ -458,9 +536,15 @@ window.CabinetBuilder = (function () {
   let _highlightMesh = null;      // Active cabinet highlight surface
   let _highlightLabel = null;     // Active cabinet label element
 
+  let _buildGen = 0;              // Incremented on every build() / clearAssembly() call.
+                                  // An in-flight _assemble() that completes with a stale
+                                  // generation is discarded — prevents orphan meshes.
+
   const _lockedHighlights = [];   // Highlight meshes for locked cabinets
   const _labelAnchors = [];       // Label anchors for all cabinets
   let _labelContainer = null;     // DOM container for label overlays
+  const _labelTmpVec = new THREE.Vector3(); // reused every frame — avoid per-frame alloc
+  let _labelCanvasRect = null;    // cached getBoundingClientRect result
 
   /* ══════════════════════════════════════════════════
      CODE PARSING & VALIDATION
@@ -731,6 +815,14 @@ window.CabinetBuilder = (function () {
     const canvas = Cabinet.renderer?.domElement || document.querySelector('canvas');
     if (canvas?.parentElement) canvas.parentElement.style.position = 'relative';
     canvas?.parentElement?.appendChild(_labelContainer);
+    // Cache canvas rect; refresh on resize to avoid calling getBoundingClientRect every frame
+    const target = canvas?.parentElement ?? canvas;
+    _labelCanvasRect = (canvas ?? document.body).getBoundingClientRect();
+    if (target) {
+      new ResizeObserver(() => {
+        _labelCanvasRect = (canvas ?? document.body).getBoundingClientRect();
+      }).observe(target);
+    }
   }
 
   /**
@@ -741,6 +833,30 @@ window.CabinetBuilder = (function () {
    * @param {number} cabinetIdx - Cabinet index in state
    * @returns {HTMLElement} Label element
    */
+  /** Returns "group A · clone #N" if cabinetIdx belongs to a clone group, else null.
+      Group letter is assigned by order of first appearance of each cloneGroupId. */
+  function _cloneSubLabel(cabinetIdx) {
+    const cabs = Cabinet.cabinets;
+    if (!cabs) return null;
+    const groupId = cabs[cabinetIdx]?.cloneGroupId;
+    if (!groupId) return null;
+
+    // Collect unique group IDs in order of first appearance
+    const seen = [];
+    for (const c of cabs) {
+      if (c.cloneGroupId && !seen.includes(c.cloneGroupId)) seen.push(c.cloneGroupId);
+    }
+    const groupLetter = String.fromCharCode(65 + seen.indexOf(groupId)); // A, B, C…
+
+    // Clone number within the group (sorted by cabinet index)
+    const members = cabs
+      .map((c, i) => ({ c, i }))
+      .filter(({ c }) => c.cloneGroupId === groupId)
+      .sort((a, b) => a.i - b.i);
+    const pos = members.findIndex(({ i }) => i === cabinetIdx);
+    return pos >= 0 ? `clone ${groupLetter}#${pos + 1}` : null;
+  }
+
   function _makeLabelEl(text, cabinetIdx) {
     _ensureLabelContainer();
     const el = document.createElement('div');
@@ -750,8 +866,22 @@ window.CabinetBuilder = (function () {
       'transform:translate(-50%,-50%)',
       'font:600 13px "Mont",sans-serif', 'color:#1a1a1a',
       'white-space:nowrap', 'user-select:none',
+      'text-align:center', 'line-height:1.3',
     ].join(';');
-    el.textContent = text;
+
+    const sub = _cloneSubLabel(cabinetIdx);
+    if (sub) {
+      const main = document.createElement('div');
+      main.textContent = text;
+      const subEl = document.createElement('div');
+      subEl.textContent = sub;
+      subEl.style.cssText = 'font:400 10px "Mont",sans-serif;color:#7a4a3a;margin-top:1px;';
+      el.appendChild(main);
+      el.appendChild(subEl);
+    } else {
+      el.textContent = text;
+    }
+
     el.addEventListener('click', (e) => {
       e.stopPropagation();
       window.dispatchEvent(new CustomEvent('cabinetLabelContextMenu', {
@@ -838,6 +968,7 @@ window.CabinetBuilder = (function () {
     if (rowAngle === 1) _highlightMesh.rotation.z = -Math.PI / 2;
     _highlightMesh.position.set(cx, 0.002, cz);
     _highlightMesh.renderOrder = 1;
+    _highlightMesh.userData.isEditingMat = true;
     Cabinet.scene.add(_highlightMesh);
 
     const labelIdx = (Cabinet.editingIdx >= 0) ? Cabinet.editingIdx : (Cabinet.cabinets ? Cabinet.cabinets.length - 1 : 0);
@@ -871,7 +1002,14 @@ window.CabinetBuilder = (function () {
    */
   function updateLabel(cabinetIdx, text) {
     const entry = _labelAnchors.find(a => a.cabinetIdx === cabinetIdx);
-    if (entry) entry.el.textContent = text;
+    if (!entry) return;
+    const mainEl = entry.el.querySelector('div') || entry.el;
+    if (mainEl === entry.el) {
+      // No sub-label div — plain text node
+      entry.el.textContent = text;
+    } else {
+      mainEl.textContent = text;
+    }
   }
 
   /**
@@ -882,12 +1020,12 @@ window.CabinetBuilder = (function () {
     if (!_labelAnchors.length || !Cabinet.camera) return;
     const canvas = Cabinet.renderer?.domElement;
     if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
+    const rect = _labelCanvasRect;
     for (const { el, anchor } of _labelAnchors) {
-      const v = anchor.clone().project(Cabinet.camera);
-      const x = (v.x + 1) / 2 * rect.width;
-      const y = (-v.y + 1) / 2 * rect.height;
-      el.style.display = (v.z > 1) ? 'none' : 'block';
+      _labelTmpVec.copy(anchor).project(Cabinet.camera);
+      const x = (_labelTmpVec.x + 1) / 2 * rect.width;
+      const y = (-_labelTmpVec.y + 1) / 2 * rect.height;
+      el.style.display = (_labelTmpVec.z > 1) ? 'none' : 'block';
       el.style.left = x + 'px';
       el.style.top = y + 'px';
     }
@@ -1556,20 +1694,7 @@ window.CabinetBuilder = (function () {
      Calculates attachment points for drag-and-drop accessories.
   ════════════════════════════════════════════════════ */
 
-  /** Valid attachment points for each accessory type.
-      Maps component filename to array of valid point labels. */
-  const _ACC_SNAP_PTS = {
-    'EZR_MDL-L87-NT':        ['A2','A3','A4','A5','A6','B2','B3','B4','B5','B6','C2','C3','C4','C5','C6'],
-    'EZR_MDL-L224-NT':       ['A2','A3','A4','A5','A6','B2','B3','B4','B5','B6','C2','C3','C4','C5','C6'],
-    'EZR_CBFX':              ['A2','A3','A4','A5','A6','B2','B3','B4','B5','B6','C2','C3','C4','C5','C6', 'ret-L', 'ret-R'],
-    'EZR_RET':               ['ret-L','ret-R'],
-    'EZR_ROUT-BRKT':         ['A5','B5','C5'],
-    'EZR_SEP_PLT-4U':        ['A5','B5','C5'],
-    'EZR_SEP_PLT-4U-horiz':  ['B6', 'B6-53', 'B6+53'],
-    'EZR_SEP_PLT-4U-R':      ['C5'],
-    'EZR_TBRKT':             ['A5','A6','B5','B6','C5','C6','ret-L','ret-R'],
-    'EZR_CAB_EXT':           ['cab-ext-L','cab-ext-M','cab-ext-R'],
-  };
+
 
   /**
    * Calculates all valid snap points for a given accessory type on a cabinet.
@@ -1636,13 +1761,69 @@ window.CabinetBuilder = (function () {
       });
     }
 
+    // Snap points on C-FRM profiles (left and right vertical frames).
+    // Only frames not occupied by mounting plates are included (per CFRM_FREE_FRAMES).
+    function _collectCFRM(de, cabOffsetX, freeFrames) {
+      const frPts = CFRM_ATTACH_PTS[p.heightU];
+      if (!frPts) return;
+      const wMM = parseInt(de.slice(0, 2)) * 100;
+      const spacingMM = FRAME_SPACING[wMM];
+      if (spacingMM === undefined) return;
+      [cabOffsetX, cabOffsetX + spacingMM].forEach((frameX, fi) => {
+        if (!freeFrames.includes(fi)) return;
+        labels.forEach(lbl => {
+          const pt = frPts[lbl];
+          if (!pt) return;
+          out.push({
+            id: `${de}-frm${fi}-${lbl}`,
+            label: lbl,
+            position: _toWorld(frameX + pt.x, ASSEMBLY_LIFT + pt.y, pt.z),
+          });
+        });
+      });
+    }
+
     if (p.de === '15DAS') {
-      _collect('06LR0', 0);
-      _collect('09DAR', 600);
+      _collect('06LR0', 0);     _collectCFRM('06LR0', 0,   [0]);   // right frame shared with 09DAR
+      _collect('09DAR', 600);   _collectCFRM('09DAR', 600, [1]);   // 090R0 base → right frame free
     } else {
-      _collect(p.de, 0);
+      const frDe = DE_FR_BASE[p.de] || p.de;
+      _collect(p.de, 0);        _collectCFRM(p.de, 0, CFRM_FREE_FRAMES[frDe] ?? []);
     }
     return out;
+  }
+
+  /**
+   * Returns the parent accessory type for an acc-on-acc accessory, or null if
+   * it attaches to cabinet snap points (normal case).
+   * @param {string} accType
+   * @returns {string|null}
+   */
+  function getAccParentType(accType) {
+    const v = _ACC_PARENT_TYPE[accType];
+    if (!v) return null;
+    return Array.isArray(v) ? v : [v];
+  }
+
+  /**
+   * Returns world-space snap points on a placed parent mesh (accessory or chassis),
+   * using the child attachment points defined in local space.
+   * @param {string} parentType  e.g. 'EZR_ROUT-BRKT' or 'Chassis-EZR_ROUT-BRKT'
+   * @param {THREE.Object3D} parentMesh  the placed mesh (already in world space)
+   * @returns {Array<{id, position: THREE.Vector3}>}
+   */
+  function getAccOnAccSnapPoints(parentType, parentMesh) {
+    const defs = _ACC_CHILD_SNAP_PTS[parentType] ?? _CHASSIS_CHILD_SNAP_PTS[parentType];
+    if (!defs || !parentMesh) return [];
+    // For chassis parents: apply DE-dependent X offset stored on mesh when placed
+    const xOffsetMM = _CHASSIS_CHILD_SNAP_PTS[parentType]
+      ? (_CHASSIS_PLT_X_OFFSET_BY_DE[parentMesh.userData.deCode] ?? 0)
+      : 0;
+    return defs.map(def => {
+      const local = new THREE.Vector3((def.x + xOffsetMM) * MM, def.y * MM, def.z * MM);
+      const world = parentMesh.localToWorld(local.clone());
+      return { id: def.id, position: world };
+    });
   }
 
   /* ══════════════════════════════════════════════════
@@ -1672,6 +1853,10 @@ window.CabinetBuilder = (function () {
 
     _status('Building ' + code + '…');
 
+    // Stamp this build; clearAssembly() or a later build() will bump _buildGen,
+    // causing this call to discard its result and prevent orphan meshes.
+    const myGen = ++_buildGen;
+
     if (_assembly) {
       if (skipFade) { Cabinet.scene.remove(_assembly); _disposeGroup(_assembly); }
       else { _fadeOutAndDispose(_assembly); }
@@ -1680,6 +1865,10 @@ window.CabinetBuilder = (function () {
 
     try {
       const group = await _assemble(p);
+
+      // A newer build or clearAssembly() ran while we were awaiting — discard result.
+      if (myGen !== _buildGen) { _disposeGroup(group); _status(''); return; }
+
       const rIdx = rowIdx ?? Cabinet.activeRowIdx ?? 0;
       _applyRowTransform(group, xOffset, rIdx, p.widthMM);
       Cabinet.scene.add(group);
@@ -1704,6 +1893,7 @@ window.CabinetBuilder = (function () {
    * @param {boolean} opts.noFade - Skip fade-out animation, default false
    */
   function clearAssembly({ noFade = false } = {}) {
+    _buildGen++;          // invalidate any in-flight _assemble() call
     _clearHighlight();
     if (!_assembly) return;
     if (noFade || Cabinet.noFadeNext) {
@@ -1862,8 +2052,11 @@ window.CabinetBuilder = (function () {
       _lockedAssemblies.push(group);
       showLockedHighlight(cab.xOffset, p.widthMM, i, cab.rowIdx ?? 0);
     }
-    if (window.CabinetDrag?.rebuildFromState)     CabinetDrag.rebuildFromState();
-    if (window.CabinetChassis?.rebuildFromState)  CabinetChassis.rebuildFromState();
+    // Chassis must be rebuilt before accessories so acc-on-chassis snap points resolve correctly
+    if (window.CabinetChassis?.rebuildFromState)  CabinetChassis.rebuildFromState().then(() => {
+      if (window.CabinetDrag?.rebuildFromState) CabinetDrag.rebuildFromState();
+    });
+    else if (window.CabinetDrag?.rebuildFromState) CabinetDrag.rebuildFromState();
   }
 
   /**
@@ -1917,6 +2110,8 @@ window.CabinetBuilder = (function () {
     updateLabel,
     updateLabelOverlays,
     getSnapPoints,
+    getAccParentType,
+    getAccOnAccSnapPoints,
     parseCode: _parse,
     rowWorldPos: _rowWorldPos,
   };

@@ -61,7 +61,7 @@ window.CabinetDrag = (function () {
   let _hoveredMat = false; // true when cursor is over a locked-cabinet highlight mat
 
   // ── Placed accessories ────────────────────────────
-  let _placed       = []; // { accCode, snapId, mesh } — current cabinet
+  let _placed       = []; // { accCode, snapId, mesh, parentSnapId? } — current cabinet
   let _lockedPlaced = []; // finalized (previous cabinets) — not interactive
 
   // ── GLB cache ─────────────────────────────────────
@@ -349,18 +349,20 @@ window.CabinetDrag = (function () {
     // Copy manually placed accessories from the original cabinet
     // If the cabinet is currently being edited, use the global placedAccessories
     // Otherwise use the accessories stored in the cabinet object
+    const _copyAcc = a => ({ code: a.code, snapId: a.snapId, parentSnapId: a.parentSnapId ?? null, parentType: a.parentType ?? null, rotated: a.rotated ?? false });
     let accessoriesToCopy = [];
     if (Cabinet.editingIdx === cabinetIdx && Cabinet.placedAccessories) {
-      accessoriesToCopy = [...Cabinet.placedAccessories];
+      accessoriesToCopy = Cabinet.placedAccessories.map(_copyAcc);
     } else if (cabinet.placedAccessories) {
-      accessoriesToCopy = [...cabinet.placedAccessories];
+      accessoriesToCopy = cabinet.placedAccessories.map(_copyAcc);
     }
 
+    const _copyChassis = ch => ({ code: ch.code, slotIdx: ch.slotIdx, heightU: ch.heightU });
     let chassisToCopy = [];
     if (Cabinet.editingIdx === cabinetIdx && Cabinet.placedChassis) {
-      chassisToCopy = [...Cabinet.placedChassis];
+      chassisToCopy = Cabinet.placedChassis.map(_copyChassis);
     } else if (cabinet.placedChassis) {
-      chassisToCopy = [...cabinet.placedChassis];
+      chassisToCopy = cabinet.placedChassis.map(_copyChassis);
     }
 
     // Create a new cabinet with the same code, positioned at the end of the active row
@@ -374,6 +376,14 @@ window.CabinetDrag = (function () {
     };
 
     Cabinet.cabinets.push(newCabinet);
+
+    // Advance xOffset so the next new cabinet starts after this duplicate
+    Cabinet.currentCabinetXOffset = Cabinet.cabinets
+      .filter(c => (c.rowIdx ?? 0) === targetRowIdx)
+      .reduce((max, c) => {
+        const p = window.CabinetBuilder?.parseCode?.(c.code);
+        return p ? Math.max(max, c.xOffset + p.widthMM) : max;
+      }, 0);
 
     // Rebuild the scene to include the new cabinet
     if (window.CabinetBuilder && window.CabinetBuilder.rebuildAllCabinetsFromState) {
@@ -408,18 +418,21 @@ window.CabinetDrag = (function () {
       if (xEnd > maxXEnd) maxXEnd = xEnd;
     }
 
+    const _copyAcc2    = a  => ({ code: a.code, snapId: a.snapId, parentSnapId: a.parentSnapId ?? null, parentType: a.parentType ?? null, rotated: a.rotated ?? false });
+    const _copyChassis2 = ch => ({ code: ch.code, slotIdx: ch.slotIdx, heightU: ch.heightU });
+
     let accessoriesToCopy = [];
     if (Cabinet.editingIdx === cabinetIdx && Cabinet.placedAccessories) {
-      accessoriesToCopy = [...Cabinet.placedAccessories];
+      accessoriesToCopy = Cabinet.placedAccessories.map(_copyAcc2);
     } else if (cabinet.placedAccessories) {
-      accessoriesToCopy = [...cabinet.placedAccessories];
+      accessoriesToCopy = cabinet.placedAccessories.map(_copyAcc2);
     }
 
     let chassisToCopy = [];
     if (Cabinet.editingIdx === cabinetIdx && Cabinet.placedChassis) {
-      chassisToCopy = [...Cabinet.placedChassis];
+      chassisToCopy = Cabinet.placedChassis.map(_copyChassis2);
     } else if (cabinet.placedChassis) {
-      chassisToCopy = [...cabinet.placedChassis];
+      chassisToCopy = cabinet.placedChassis.map(_copyChassis2);
     }
 
     const newCabinet = {
@@ -433,6 +446,14 @@ window.CabinetDrag = (function () {
     };
 
     Cabinet.cabinets.push(newCabinet);
+
+    // Advance xOffset so the next new cabinet starts after this clone
+    Cabinet.currentCabinetXOffset = Cabinet.cabinets
+      .filter(c => (c.rowIdx ?? 0) === targetRowIdx)
+      .reduce((max, c) => {
+        const p = window.CabinetBuilder?.parseCode?.(c.code);
+        return p ? Math.max(max, c.xOffset + p.widthMM) : max;
+      }, 0);
 
     if (window.CabinetBuilder?.rebuildAllCabinetsFromState) CabinetBuilder.rebuildAllCabinetsFromState();
     if (window.CabinetUI?.updateCabinetList)               CabinetUI.updateCabinetList();
@@ -509,23 +530,66 @@ window.CabinetDrag = (function () {
       CabinetBuilder.rebuildAllCabinetsFromState();
     }
 
+    // Update xOffset and floor after every delete
+    Cabinet.currentCabinetXOffset = Cabinet.cabinets.length > 0
+      ? Math.max(0, ...Cabinet.cabinets
+          .filter(c => (c.rowIdx ?? 0) === (Cabinet.activeRowIdx ?? 0))
+          .map(c => { const p = window.CabinetBuilder?.parseCode?.(c.code); return p ? c.xOffset + p.widthMM : 0; }))
+      : 0;
+    if (window.CabinetFloor) CabinetFloor.update();
+
+    // When all cabinets are gone — rebuild arrows (floor already updated above)
+    if (Cabinet.cabinets.length === 0) {
+      if (window.CabinetArrow) CabinetArrow.rebuildAll();
+    }
+
     if (window.CabinetUI && window.CabinetUI.updateCabinetList) {
       CabinetUI.updateCabinetList();
     }
   }
 
+  // Accessories that rotate around Y axis instead of Z when user hits "Rotate 180°"
+  const _ROTATE_Y_AXIS = new Set(['EZR_ROUT-PLT']);
+
+  function _applyRotation(mesh, accCode, rotated, rowIdx) {
+    if (_ROTATE_Y_AXIS.has(accCode)) {
+      mesh.rotation.y = _rowRotY(rowIdx) + (rotated ? Math.PI : 0);
+      mesh.rotation.z = 0;
+    } else {
+      mesh.rotation.y = _rowRotY(rowIdx);
+      mesh.rotation.z = rotated ? Math.PI : 0;
+    }
+  }
+
   function _rotateAccessory(idx) {
-    _placed[idx].rotated = !_placed[idx].rotated;
-    _placed[idx].mesh.rotation.z = _placed[idx].rotated ? Math.PI : 0;
+    const p = _placed[idx];
+    p.rotated = !p.rotated;
+    _applyRotation(p.mesh, p.accCode, p.rotated, Cabinet.activeRowIdx ?? 0);
+    if (Cabinet.placedAccessories[idx]) Cabinet.placedAccessories[idx].rotated = p.rotated;
   }
 
   function _removeAccessory(idx) {
     const p = _placed[idx];
+    const snapId = p.snapId;
+    const cabIdx = p.cabinetIdx ?? Cabinet.editingIdx ?? 0;
+
+    // Cascade: remove child accessories attached to this one
+    for (let i = _placed.length - 1; i >= 0; i--) {
+      if (i === idx) continue;
+      const child = _placed[i];
+      if (child.parentSnapId === snapId && (child.cabinetIdx ?? cabIdx) === cabIdx) {
+        _scene.remove(child.mesh);
+        _placed.splice(i, 1);
+        Cabinet.placedAccessories.splice(i, 1);
+        if (i < idx) idx--; // keep idx valid after splice
+      }
+    }
+
     _scene.remove(p.mesh);
     _placed.splice(idx, 1);
     Cabinet.placedAccessories.splice(idx, 1);
     if (window.CabinetUI) CabinetUI.rebuildBOM();
-    if (_hoveredIdx === idx) { _hoveredIdx = -1; _canvas.style.cursor = ''; }
+    if (_hoveredIdx >= idx) { _hoveredIdx = -1; _canvas.style.cursor = ''; }
   }
 
   /* ══════════════════════════════════════════════════
@@ -534,12 +598,30 @@ window.CabinetDrag = (function () {
   function _onCanvasDown(e) {
     if (e.button !== 0 || _dragging) return;
 
-    // Check click on confirmed-cabinet highlight mat
-    const matIdx = _hitHighlightMat(e.clientX, e.clientY);
-    if (matIdx >= 0) {
-      e.stopPropagation(); e.preventDefault();
-      if (window.switchToCabinetEdit) switchToCabinetEdit(matIdx);
+    // Chassis gets priority over mat planes: if cursor hits a chassis mesh,
+    // step aside and let chassis._onCanvasDown (bubble phase) handle it.
+    if (Cabinet.editingIdx >= 0
+        && window.CabinetChassis
+        && CabinetChassis.hitTest(e.clientX, e.clientY)) {
       return;
+    }
+
+    // Click on editing mat → confirm current cabinet
+    if (_hitEditingMat(e.clientX, e.clientY)) {
+      e.stopPropagation(); e.preventDefault();
+      if (window.onReadyClick) onReadyClick();
+      return;
+    }
+
+    // Don't switch to another cabinet while one is being edited.
+    // Check click on confirmed-cabinet highlight mat only when not in edit mode.
+    if (Cabinet.editingIdx < 0) {
+      const matIdx = _hitHighlightMat(e.clientX, e.clientY);
+      if (matIdx >= 0) {
+        e.stopPropagation(); e.preventDefault();
+        if (window.switchToCabinetEdit) switchToCabinetEdit(matIdx);
+        return;
+      }
     }
 
     const idx = _hitPlaced(e.clientX, e.clientY);
@@ -572,8 +654,7 @@ window.CabinetDrag = (function () {
     });
 
     _ghostEl = _makeGhostLabel(_dragAcc, cx, cy);
-
-    _snapPts = CabinetBuilder.getSnapPoints(Cabinet.descriptionCode, _dragAcc, Cabinet.currentCabinetXOffset, Cabinet.activeRowIdx ?? 0);
+    _snapPts = _resolveSnapPoints(_dragAcc);
     _showMarkers();
   }
 
@@ -596,9 +677,44 @@ window.CabinetDrag = (function () {
     _dragAcc    = accCode;
 
     _ghostEl = _makeGhostLabel(accCode, cx, cy);
-    _snapPts = CabinetBuilder.getSnapPoints(Cabinet.descriptionCode, accCode, Cabinet.currentCabinetXOffset, Cabinet.activeRowIdx ?? 0);
+    _snapPts = _resolveSnapPoints(accCode);
     _showMarkers();
     _loadGhost(accCode);
+  }
+
+  /**
+   * Returns snap points for dragging accCode.
+   * For acc-on-acc types (e.g. EZR_ROUT-PLT): collects child snap points
+   * from every placed parent accessory of the required type.
+   * For normal types: delegates to CabinetBuilder.getSnapPoints.
+   */
+  function _resolveSnapPoints(accCode) {
+    const parentTypes = CabinetBuilder.getAccParentType?.(accCode); // array or null
+    if (parentTypes) {
+      const pts = [];
+      // Acc-on-acc: search placed accessories
+      for (const p of _placed) {
+        if (parentTypes.includes(p.accCode)) {
+          const childPts = CabinetBuilder.getAccOnAccSnapPoints(p.accCode, p.mesh);
+          for (const cp of childPts) {
+            pts.push({ ...cp, parentSnapId: p.snapId, parentType: p.accCode });
+          }
+        }
+      }
+      // Acc-on-chassis: search placed chassis
+      if (window.CabinetChassis) {
+        for (const ch of CabinetChassis.getPlaced()) {
+          if (parentTypes.includes(ch.code)) {
+            const childPts = CabinetBuilder.getAccOnAccSnapPoints(ch.code, ch.mesh);
+            for (const cp of childPts) {
+              pts.push({ ...cp, parentSnapId: ch.slotIdx, parentType: ch.code });
+            }
+          }
+        }
+      }
+      return pts;
+    }
+    return CabinetBuilder.getSnapPoints(Cabinet.descriptionCode, accCode, Cabinet.currentCabinetXOffset, Cabinet.activeRowIdx ?? 0);
   }
 
   /* ══════════════════════════════════════════════════
@@ -701,11 +817,12 @@ window.CabinetDrag = (function () {
     const inCanvas = cx >= rect.left && cx <= rect.right
                   && cy >= rect.top  && cy <= rect.bottom;
 
-    const matIdx = inCanvas ? _hitHighlightMat(cx, cy) : -1;
-    if (matIdx >= 0) {
+    const onEditingMat = inCanvas && _hitEditingMat(cx, cy);
+    const matIdx = !onEditingMat && inCanvas ? _hitHighlightMat(cx, cy) : -1;
+    if (onEditingMat || matIdx >= 0) {
+      _canvas.style.cursor = 'pointer'; // always re-apply — arrow.js resets on every mousemove
       if (!_hoveredMat) {
         _hoveredMat = true;
-        _canvas.style.cursor = 'pointer';
         if (_hoveredIdx >= 0 && _hoveredIdx < _placed.length) {
           _setPlacedOpacity(_placed[_hoveredIdx].mesh, OPACITY_PLACED);
           _hoveredIdx = -1;
@@ -718,6 +835,10 @@ window.CabinetDrag = (function () {
       _canvas.style.cursor = '';
     }
     const idx = inCanvas ? _hitPlaced(cx, cy) : -1;
+
+    // Always re-apply cursor — arrow.js resets it to '' on every mousemove
+    _canvas.style.cursor = idx >= 0 ? (_ctrlHeld ? 'copy' : 'grab') : '';
+
     if (idx === _hoveredIdx) return;
 
     // Restore previous
@@ -727,9 +848,6 @@ window.CabinetDrag = (function () {
     // Highlight new
     if (idx >= 0) {
       _setPlacedOpacity(_placed[idx].mesh, OPACITY_HOVER);
-      _canvas.style.cursor = _ctrlHeld ? 'copy' : 'grab';
-    } else {
-      _canvas.style.cursor = '';
     }
     _hoveredIdx = idx;
   }
@@ -756,7 +874,7 @@ window.CabinetDrag = (function () {
 
   function _finishMove() {
     const p = _placed[_movingIdx];
-
+    const oldSnapId = p.snapId;
     if (_nearIdx >= 0 && _canDrop) {
       const snap = _snapPts[_nearIdx];
       p.mesh.position.copy(snap.position);
@@ -773,8 +891,62 @@ window.CabinetDrag = (function () {
       if (c.isMesh) { c.material.color.setHex(COLOR_PLACED); c.material.opacity = OPACITY_PLACED; }
     });
 
+    // Reposition children attached to this accessory.
+    // Pass oldSnapId so children (whose parentSnapId still = old value) can be found,
+    // and newSnapId so their parentSnapId is updated to follow the parent's new location.
+    p.mesh.updateWorldMatrix(true, true);
+    _repositionChildren(p.accCode, oldSnapId, p.snapId, p.cabinetIdx ?? Cabinet.editingIdx ?? 0, _placed);
+
     _movingIdx     = -1;
     _moveOriginPos = null;
+  }
+
+  // Reposition all entries that are children of a given parent.
+  // oldParentSnapId — the snap the parent was at (children reference this)
+  // newParentSnapId — the snap the parent is now at (children's parentSnapId is updated to this)
+  function _repositionChildren(parentAccCode, oldParentSnapId, newParentSnapId, cabinetIdx, entries) {
+    const childTypes = _getChildTypes(parentAccCode);
+    if (!childTypes.length) return;
+    // Find parent entry by its new snap (it was already updated in _placed before this call)
+    const parentEntry = entries.find(e =>
+      e.accCode === parentAccCode &&
+      e.snapId === newParentSnapId &&
+      (e.cabinetIdx ?? cabinetIdx) === cabinetIdx
+    );
+    if (!parentEntry?.mesh) return;
+    parentEntry.mesh.updateWorldMatrix(true, true);
+    const childPts = CabinetBuilder.getAccOnAccSnapPoints(parentAccCode, parentEntry.mesh);
+    for (const child of entries) {
+      if (!childTypes.includes(child.accCode)) continue;
+      if (child.parentSnapId !== oldParentSnapId) continue;
+      if ((child.cabinetIdx ?? cabinetIdx) !== cabinetIdx) continue;
+      const snap = childPts.find(s => s.id === child.snapId);
+      if (snap) child.mesh.position.copy(snap.position);
+      // Keep child's parentSnapId in sync with the parent's new snapId
+      if (oldParentSnapId !== newParentSnapId) {
+        child.parentSnapId = newParentSnapId;
+        const stateIdx = _placed.indexOf(child);
+        if (stateIdx >= 0 && Cabinet.placedAccessories[stateIdx]) {
+          Cabinet.placedAccessories[stateIdx].parentSnapId = newParentSnapId;
+        }
+      }
+    }
+  }
+
+  // Returns all accessory codes that can attach to the given parent type.
+  function _getChildTypes(parentAccCode) {
+    const result = [];
+    if (!CabinetBuilder.getAccParentType) return result;
+    // We need to check which acc types list parentAccCode as a parent
+    // Re-use ACCESSORY_CATALOG codes if available, else rely on known types
+    const knownTypes = window.ACCESSORY_CATALOG
+      ? ACCESSORY_CATALOG.map(a => a.code)
+      : ['EZR_ROUT-PLT'];
+    for (const code of knownTypes) {
+      const parents = CabinetBuilder.getAccParentType(code);
+      if (parents && parents.includes(parentAccCode)) result.push(code);
+    }
+    return result;
   }
 
   /* ══════════════════════════════════════════════════
@@ -796,11 +968,13 @@ window.CabinetDrag = (function () {
           { color: COLOR_PLACED, transparent: true, opacity: OPACITY_PLACED });
       });
       mesh.position.copy(snap.position);
-      mesh.rotation.y = _rowRotY(Cabinet.activeRowIdx ?? 0);
+      _applyRotation(mesh, accCode, false, Cabinet.activeRowIdx ?? 0);
       mesh.userData.isPlaced = true;
       _scene.add(mesh);
-      _placed.push({ accCode, snapId: snap.id, mesh, rotated: false });
-      Cabinet.placedAccessories.push({ code: accCode, snapId: snap.id });
+      const parentSnapId = snap.parentSnapId ?? null;
+      const parentType   = snap.parentType   ?? null;
+      _placed.push({ accCode, snapId: snap.id, mesh, rotated: false, parentSnapId, parentType, cabinetIdx: Cabinet.editingIdx ?? 0 });
+      Cabinet.placedAccessories.push({ code: accCode, snapId: snap.id, parentSnapId, parentType, rotated: false });
       if (window.CabinetUI) CabinetUI.rebuildBOM();
     } catch (e) {
       console.warn('[CabinetDrag] Could not place accessory:', e.message);
@@ -834,23 +1008,42 @@ window.CabinetDrag = (function () {
 
     activeMesh.position.copy(_snapPts[idx].position);
     activeMesh.updateWorldMatrix(true, true);
-    const box = new THREE.Box3().setFromObject(activeMesh);
-    // Deflate by 2 mm to avoid false collisions from merely touching faces
-    box.expandByScalar(-0.002);
 
-    return !_occupiedBoxes().some(b => b.intersectsBox(box));
+    // Build combined box: the dragged mesh + all its children (acc-on-acc)
+    const combinedBox = new THREE.Box3().setFromObject(activeMesh);
+    const accCode = _dragAcc;
+    const cabIdx = _movingIdx >= 0 ? (_placed[_movingIdx].cabinetIdx ?? Cabinet.editingIdx ?? 0) : (Cabinet.editingIdx ?? 0);
+    const childTypes = _getChildTypes(accCode);
+    if (childTypes.length > 0) {
+      for (const child of _placed) {
+        if (!childTypes.includes(child.accCode)) continue;
+        if ((child.cabinetIdx ?? cabIdx) !== cabIdx) continue;
+        // Predict child position at new snap
+        const childPts = CabinetBuilder.getAccOnAccSnapPoints(accCode, activeMesh);
+        const csnap = childPts.find(s => s.id === child.snapId);
+        if (csnap) combinedBox.expandByPoint(csnap.position);
+      }
+    }
+    combinedBox.expandByScalar(-0.002);
+
+    // For acc-on-acc: exclude the parent accessory mesh from collision check
+    const parentSnapId = _snapPts[idx].parentSnapId ?? null;
+
+    return !_occupiedBoxes(parentSnapId).some(b => b.intersectsBox(combinedBox));
   }
 
-  function _occupiedBoxes() {
+  function _occupiedBoxes(excludeParentSnapId = null) {
     const boxes = [];
     _scene.traverse(obj => {
       if (obj.userData.isAccessory) boxes.push(new THREE.Box3().setFromObject(obj));
     });
     for (const p of _lockedPlaced) {
+      if (excludeParentSnapId !== null && p.snapId === excludeParentSnapId) continue;
       boxes.push(new THREE.Box3().setFromObject(p.mesh));
     }
     for (let i = 0; i < _placed.length; i++) {
       if (i === _movingIdx) continue;
+      if (excludeParentSnapId !== null && _placed[i].snapId === excludeParentSnapId) continue;
       boxes.push(new THREE.Box3().setFromObject(_placed[i].mesh));
     }
     return boxes;
@@ -907,6 +1100,18 @@ window.CabinetDrag = (function () {
     const hits = _raycaster.intersectObjects(mats, false);
     if (!hits.length) return -1;
     return hits[0].object.userData.cabinetIdx ?? -1;
+  }
+
+  function _hitEditingMat(cx, cy) {
+    const rect = _canvas.getBoundingClientRect();
+    _raycaster.setFromCamera({
+      x:  ((cx - rect.left) / rect.width)  * 2 - 1,
+      y: -((cy - rect.top)  / rect.height) * 2 + 1,
+    }, _camera);
+    const mats = [];
+    _scene.traverse(obj => { if (obj.userData.isEditingMat) mats.push(obj); });
+    const hits = _raycaster.intersectObjects(mats, false);
+    return hits.length > 0;
   }
 
   function _hitPlaced(cx, cy) {
@@ -996,7 +1201,7 @@ window.CabinetDrag = (function () {
       });
     }
     if (Cabinet.cabinets[editingIdx]) {
-      Cabinet.cabinets[editingIdx].placedAccessories = _placed.map(p => ({ code: p.accCode, snapId: p.snapId }));
+      Cabinet.cabinets[editingIdx].placedAccessories = _placed.map(p => ({ code: p.accCode, snapId: p.snapId, parentSnapId: p.parentSnapId ?? null, parentType: p.parentType ?? null, rotated: p.rotated ?? false }));
     }
     const start = _lockedStart(editingIdx);
     _lockedPlaced.splice(start, 0, ..._placed);
@@ -1020,7 +1225,7 @@ window.CabinetDrag = (function () {
       _placed.push(p);
     }
     Cabinet.placedAccessories = _placed.map(p => ({
-      code: p.accCode, snapId: p.snapId,
+      code: p.accCode, snapId: p.snapId, parentSnapId: p.parentSnapId ?? null, parentType: p.parentType ?? null, rotated: p.rotated ?? false,
     }));
   }
 
@@ -1048,21 +1253,49 @@ window.CabinetDrag = (function () {
   function rebuildAllAccessories() {
     const editingIdx = Cabinet.editingIdx ?? -1;
 
-    // Helper: reposition + reorient one entry using its cabinet's snap points
-    function _repositionEntry(entry, cabinetIdx) {
+    // Helper: reposition + reorient one entry using its cabinet's snap points.
+    // For acc-on-acc entries (parentSnapId set), position is resolved after all
+    // parent accessories have been repositioned (second pass, see below).
+    function _repositionEntry(entry, cabinetIdx, allEntries) {
       const cab = Cabinet.cabinets[cabinetIdx];
       if (!cab) return;
       const rowIdx = cab.rowIdx ?? 0;
-      const snaps  = CabinetBuilder.getSnapPoints(cab.code, entry.accCode, cab.xOffset, rowIdx);
-      const snap   = snaps.find(s => s.id === entry.snapId);
-      if (!snap) return;
 
-      // Update position
-      entry.mesh.position.copy(snap.position);
+      if (entry.parentSnapId != null && CabinetBuilder.getAccParentType?.(entry.accCode)) {
+        // Acc-on-acc or acc-on-chassis: find parent by parentType + parentSnapId
+        const parentTypes = CabinetBuilder.getAccParentType(entry.accCode);
+        const parentType  = entry.parentType ?? parentTypes[0];
 
-      // Update rotation: row Y-rotation + preserve Z-flip (rotated flag)
-      entry.mesh.rotation.y = _rowRotY(rowIdx);
-      entry.mesh.rotation.z = entry.rotated ? Math.PI : 0;
+        // Search placed accessories first — scoped to same cabinet
+        let parentMesh = allEntries.find(e =>
+          e.cabinetIdx === (entry.cabinetIdx ?? cabinetIdx) &&
+          e.accCode === parentType &&
+          e.snapId === entry.parentSnapId
+        )?.mesh;
+
+        // Then search chassis — scoped to same cabinet
+        if (!parentMesh && window.CabinetChassis) {
+          parentMesh = CabinetChassis.getPlaced().find(ch =>
+            ch.code === parentType &&
+            ch.slotIdx === entry.parentSnapId &&
+            ch.cabinetIdx === (entry.cabinetIdx ?? cabinetIdx)
+          )?.mesh;
+        }
+
+        if (parentMesh) {
+          const childPts = CabinetBuilder.getAccOnAccSnapPoints(parentType, parentMesh);
+          const snap = childPts.find(s => s.id === entry.snapId);
+          if (snap) entry.mesh.position.copy(snap.position);
+        }
+      } else {
+        const snaps = CabinetBuilder.getSnapPoints(cab.code, entry.accCode, cab.xOffset, rowIdx);
+        const snap  = snaps.find(s => s.id === entry.snapId);
+        if (!snap) return;
+        entry.mesh.position.copy(snap.position);
+      }
+
+      // Update rotation: row Y-rotation + preserve flip (rotated flag), axis depends on accCode
+      _applyRotation(entry.mesh, entry.accCode, entry.rotated ?? false, rowIdx);
     }
 
     // Locked accessories (all confirmed cabinets except the one being edited)
@@ -1071,14 +1304,14 @@ window.CabinetDrag = (function () {
       if (i === editingIdx) continue;
       const count = Cabinet.cabinets[i]?.placedAccessories?.length || 0;
       for (let j = 0; j < count; j++) {
-        _repositionEntry(_lockedPlaced[lockedCursor + j], i);
+        _repositionEntry(_lockedPlaced[lockedCursor + j], i, _lockedPlaced);
       }
       lockedCursor += count;
     }
 
     // Active (editing) accessories
     for (const entry of _placed) {
-      if (editingIdx >= 0) _repositionEntry(entry, editingIdx);
+      if (editingIdx >= 0) _repositionEntry(entry, editingIdx, _placed);
     }
   }
 
@@ -1117,11 +1350,13 @@ window.CabinetDrag = (function () {
 
       for (let j = Math.max(0, startEntry); j < count; j++) {
         const entry = cab.placedAccessories[j];
-        const snaps = CabinetBuilder.getSnapPoints(cab.code, entry.code, cab.xOffset, rowIdx);
-        const snap  = snaps.find(s => s.id === entry.snapId);
+        // Acc-on-acc: snap resolved in second pass after all meshes are placed
+        const snap = entry.parentSnapId != null
+          ? null
+          : CabinetBuilder.getSnapPoints(cab.code, entry.code, cab.xOffset, rowIdx).find(s => s.id === entry.snapId);
         tasks.push(
           _loadGLB(entry.code)
-            .then(mesh => ({ mesh, entry, snap, rowIdx }))
+            .then(mesh => ({ mesh, entry, snap, rowIdx, cabinetIdx: i }))
             .catch(e => { console.warn('[CabinetDrag] rebuildFromState failed:', entry.code, e.message); return null; })
         );
       }
@@ -1129,18 +1364,80 @@ window.CabinetDrag = (function () {
     }
 
     const results = await Promise.all(tasks);
+
+    // First pass: place all accessories, store cabinetIdx for scoped parent lookup
     for (const r of results) {
-      if (!r || !r.snap) continue;
-      const { mesh, entry, snap, rowIdx } = r;
+      if (!r) continue;
+      const { mesh, entry, snap, rowIdx, cabinetIdx } = r;
       mesh.traverse(c => { if (c.isMesh) c.userData.origMat = c.material; });
-      mesh.position.copy(snap.position);
-      mesh.rotation.y = _rowRotY(rowIdx);
-      mesh.rotation.z = (entry.rotated ?? false) ? Math.PI : 0;
+      if (snap) mesh.position.copy(snap.position);
+      _applyRotation(mesh, entry.code, entry.rotated ?? false, rowIdx);
       mesh.userData.isPlaced = true;
       _scene.add(mesh);
-      _lockedPlaced.push({ accCode: entry.code, snapId: entry.snapId, mesh, rotated: entry.rotated ?? false });
+      mesh.updateWorldMatrix(true, true);
+      _lockedPlaced.push({ accCode: entry.code, snapId: entry.snapId, mesh, rotated: entry.rotated ?? false, parentSnapId: entry.parentSnapId ?? null, parentType: entry.parentType ?? null, cabinetIdx });
+    }
+
+    // Second pass: reposition acc-on-acc / acc-on-chassis entries.
+    // Search for parent only within the same cabinet to avoid cross-cabinet collisions
+    // when multiple cabinets have accessories with the same snapId.
+    for (const p of _lockedPlaced) {
+      if (p.parentSnapId == null || !CabinetBuilder.getAccParentType?.(p.accCode)) continue;
+      const parentType = p.parentType;
+      if (!parentType) continue;
+
+      // Scope search to same cabinet
+      let parentMesh = _lockedPlaced.find(e =>
+        e.cabinetIdx === p.cabinetIdx &&
+        e.accCode === parentType &&
+        e.snapId === p.parentSnapId
+      )?.mesh;
+
+      if (!parentMesh && window.CabinetChassis) {
+        // For chassis parent: chassis slotIdx is scoped per-cabinet already
+        const chEntry = CabinetChassis.getPlaced().find(ch =>
+          ch.code === parentType &&
+          ch.slotIdx === p.parentSnapId &&
+          ch.cabinetIdx === p.cabinetIdx
+        );
+        parentMesh = chEntry?.mesh;
+      }
+      if (!parentMesh) continue;
+
+      parentMesh.updateWorldMatrix(true, true);
+      const childPts = CabinetBuilder.getAccOnAccSnapPoints(parentType, parentMesh);
+      const snap = childPts.find(s => s.id === p.snapId);
+      if (snap) p.mesh.position.copy(snap.position);
     }
   }
 
-  return { init, clear, clearAll, finalizeCurrent, saveEditBack, loadForEdit, shiftLockedPlaced, rebuildAllAccessories, rebuildFromState, _isDragging: () => _dragging };
+  return { init, clear, clearAll, finalizeCurrent, saveEditBack, loadForEdit, shiftLockedPlaced, rebuildAllAccessories, rebuildFromState, _isDragging: () => _dragging,
+    _repositionChildrenOfChassis(chassisCode, oldSlotIdx, newSlotIdx, cabinetIdx) {
+      // Called by CabinetChassis after moving a chassis — repositions attached accessories
+      // and updates their parentSnapId to the new slotIdx so save/load stays correct.
+      const chassisMesh = window.CabinetChassis?.getPlaced().find(ch =>
+        ch.code === chassisCode && ch.slotIdx === newSlotIdx && (ch.cabinetIdx ?? cabinetIdx) === cabinetIdx
+      )?.mesh;
+      if (!chassisMesh) return;
+      chassisMesh.updateWorldMatrix(true, true);
+      const childPts = CabinetBuilder.getAccOnAccSnapPoints(chassisCode, chassisMesh);
+      const allEntries = [..._lockedPlaced, ..._placed];
+      for (const child of allEntries) {
+        if (child.parentType !== chassisCode) continue;
+        if ((child.cabinetIdx ?? cabinetIdx) !== cabinetIdx) continue;
+        if (child.parentSnapId !== oldSlotIdx) continue;
+        const snap = childPts.find(s => s.id === child.snapId);
+        if (snap) child.mesh.position.copy(snap.position);
+        // Keep parentSnapId in sync with the chassis's new slot
+        if (oldSlotIdx !== newSlotIdx) {
+          child.parentSnapId = newSlotIdx;
+          // Update Cabinet.placedAccessories for the active cabinet
+          const pidx = _placed.indexOf(child);
+          if (pidx >= 0 && Cabinet.placedAccessories[pidx]) {
+            Cabinet.placedAccessories[pidx].parentSnapId = newSlotIdx;
+          }
+        }
+      }
+    },
+  };
 })();

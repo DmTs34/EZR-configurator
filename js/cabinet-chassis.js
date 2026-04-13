@@ -25,6 +25,7 @@ window.CabinetChassis = (function () {
   const RAIL_Y_BASE = 40;                // rail Y offset (from builder)
   const SLOT_OFF_X  = 10;                // mm right of rail X
   const SLOT_OFF_Y  = 20;                // mm above rail Y base
+  const SLOT_OFF_Z  = 17;               // mm depth offset (into cabinet)
 
   const COLOR_PLACED  = 0x52a394;  // greenish teal - same as accessories
   const COLOR_GHOST   = 0x4c8cf5;
@@ -93,7 +94,7 @@ window.CabinetChassis = (function () {
   let _slotMeshes = [];         // visual slot rectangles
   let _nearSlot   = -1;         // current nearest slot index
   let _canDrop    = false;
-  let _dragStart  = { x: 0, y: 0 };
+
 
   let _placed        = [];       // active placements: [{ code, slotIdx, heightU, mesh }]
   let _lockedPlaced  = [];       // finalized: [{ code, slotIdx, heightU, mesh }]
@@ -163,7 +164,7 @@ window.CabinetChassis = (function () {
     for (let i = 0; i < heightU; i++) {
       const lxMM = sectionOffsetMM + sectionRailX + SLOT_OFF_X;
       const lyMM = ASSEMBLY_LIFT + RAIL_Y_BASE + SLOT_OFF_Y + i * SLOT_H_MM;
-      const worldPos = CabinetUtils.localToWorld(lxMM, lyMM, 0, xOffset, rowIdx, p.widthMM);
+      const worldPos = CabinetUtils.localToWorld(lxMM, lyMM, SLOT_OFF_Z, xOffset, rowIdx, p.widthMM);
       slots.push({ idx: i, position: worldPos, occupied: false });
     }
 
@@ -506,7 +507,7 @@ window.CabinetChassis = (function () {
   function _startMoveDrag(code, idx, cx, cy, isCopy) {
     _dragging = true;
     _dragCode = code;
-    _dragStart = { x: cx, y: cy };
+
     _nearSlot = -1;
     _canDrop = false;
 
@@ -553,7 +554,7 @@ window.CabinetChassis = (function () {
   function _startDrag(code, cx, cy) {
     _dragging = true;
     _dragCode = code;
-    _dragStart = { x: cx, y: cy };
+
     _nearSlot = -1;
     _canDrop = false;
     _movingIdx = -1;
@@ -664,13 +665,21 @@ window.CabinetChassis = (function () {
 
       if (_movingIdx >= 0) {
         // Moving existing chassis
-        _placed[_movingIdx].slotIdx = _nearSlot;
-        _placed[_movingIdx].mesh.position.copy(_slots[_nearSlot].position);
-        _placed[_movingIdx].mesh.rotation.y = CabinetUtils.rowRotY(Cabinet.activeRowIdx ?? 0);
+        const ch = _placed[_movingIdx];
+        const oldSlotIdx = _moveOriginPos;
+        ch.slotIdx = _nearSlot;
+        ch.mesh.position.copy(_slots[_nearSlot].position);
+        ch.mesh.rotation.y = CabinetUtils.rowRotY(Cabinet.activeRowIdx ?? 0);
         Cabinet.placedChassis[_movingIdx].slotIdx = _nearSlot;
 
         // Restore opacity after move
-        _setPlacedOpacity(_placed[_movingIdx].mesh, OPACITY_PLACED);
+        _setPlacedOpacity(ch.mesh, OPACITY_PLACED);
+
+        // Reposition accessories attached to this chassis
+        ch.mesh.updateWorldMatrix(true, true);
+        if (window.CabinetDrag?._repositionChildrenOfChassis) {
+          CabinetDrag._repositionChildrenOfChassis(ch.code, oldSlotIdx, _nearSlot, ch.cabinetIdx ?? Cabinet.editingIdx ?? 0);
+        }
       } else {
         // New placement (from card or copy)
         await _placeChassis(_dragCode, _nearSlot, heightU);
@@ -854,11 +863,14 @@ window.CabinetChassis = (function () {
       mesh.position.copy(bottomSlot.position);
       mesh.rotation.y = CabinetUtils.rowRotY(Cabinet.activeRowIdx ?? 0);
       mesh.userData.isPlacedChassis = true;
+      // Store DE code so child snap points can apply DE-dependent X offset
+      const _parsedForDE = CabinetBuilder.parseCode(Cabinet.descriptionCode);
+      if (_parsedForDE) mesh.userData.deCode = _parsedForDE.de;
 
       _scene.add(mesh);
 
       // Add to state
-      _placed.push({ code, slotIdx, heightU, mesh });
+      _placed.push({ code, slotIdx, heightU, mesh, cabinetIdx: Cabinet.editingIdx ?? 0 });
       Cabinet.placedChassis.push({ code, slotIdx, heightU });
 
       // Update visuals
@@ -1259,12 +1271,13 @@ window.CabinetChassis = (function () {
       const rowIdx = cab.rowIdx ?? 0;
 
       const startEntry = existingCount - coveredCount; // entries already loaded for this cabinet
+      const deCode = CabinetBuilder.parseCode(cab.code)?.de ?? null;
       for (let j = Math.max(0, startEntry); j < count; j++) {
         const entry = cab.placedChassis[j];
         const slots = _buildSlots(cab.code, cab.xOffset, rowIdx, entry.code);
         tasks.push(
           _load(entry.code)
-            .then(mesh => ({ mesh, entry, slots, rowIdx }))
+            .then(mesh => ({ mesh, entry, slots, rowIdx, cabinetIdx: i, deCode }))
             .catch(e => { console.warn('[CabinetChassis] rebuildFromState: failed', entry.code, e.message); return null; })
         );
       }
@@ -1274,15 +1287,17 @@ window.CabinetChassis = (function () {
     const results = await Promise.all(tasks);
     for (const r of results) {
       if (!r) continue;
-      const { mesh, entry, slots, rowIdx } = r;
+      const { mesh, entry, slots, rowIdx, cabinetIdx, deCode } = r;
       mesh.userData.isPlacedChassis = true;
+      if (deCode) mesh.userData.deCode = deCode;
       const slot = slots[entry.slotIdx];
       if (slot) {
         mesh.position.copy(slot.position);
         mesh.rotation.y = CabinetUtils.rowRotY(rowIdx);
       }
       _scene.add(mesh);
-      _lockedPlaced.push({ code: entry.code, slotIdx: entry.slotIdx, heightU: entry.heightU, mesh });
+      mesh.updateWorldMatrix(true, true);
+      _lockedPlaced.push({ code: entry.code, slotIdx: entry.slotIdx, heightU: entry.heightU, mesh, cabinetIdx });
     }
   }
 
@@ -1304,5 +1319,16 @@ window.CabinetChassis = (function () {
     captureThumb,
     CHASSIS_CATALOG,
     _isDragging: () => _dragging,
+    getPlaced: () => [..._lockedPlaced, ..._placed],
+    hitTest(clientX, clientY) {
+      if (!_camera || !_canvas || _placed.length === 0) return false;
+      const raycaster = new THREE.Raycaster();
+      const rect = _canvas.getBoundingClientRect();
+      raycaster.setFromCamera({
+        x:  ((clientX - rect.left) / rect.width)  * 2 - 1,
+        y: -((clientY - rect.top)  / rect.height) * 2 + 1,
+      }, _camera);
+      return raycaster.intersectObjects(_placed.map(p => p.mesh), true).length > 0;
+    },
   };
 })();

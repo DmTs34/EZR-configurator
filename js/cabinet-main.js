@@ -41,8 +41,7 @@
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(W, H, false);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.enabled = false;
     // SRGBColorSpace in r152+; fallback for older builds
     if (THREE.SRGBColorSpace !== undefined) {
       renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -65,9 +64,7 @@
 
     const key = new THREE.DirectionalLight(0xfff4e8, 1.1);
     key.position.set(4, 6, 4);
-    key.castShadow = true;
-    key.shadow.bias = -0.001;
-    key.shadow.normalBias = 0.02;
+    key.castShadow = false;
     scene.add(key);
 
     const fill = new THREE.DirectionalLight(0xd0e8ff, 0.45);
@@ -146,11 +143,22 @@
     /* Single click on canvas → finalize rack if editing */
     {
       let _clickDownX = 0, _clickDownY = 0;
+      let _mousedownOnCanvas = false; // true only when mousedown originated on this canvas
       canvas.addEventListener('mousedown', e => {
         _clickDownX = e.clientX; _clickDownY = e.clientY;
+        _mousedownOnCanvas = true;
       });
+      // Reset flag on any non-canvas mousedown (e.g. modal card clicks)
+      document.addEventListener('mousedown', e => {
+        if (e.target !== canvas) _mousedownOnCanvas = false;
+      }, true); // capture phase so it runs before canvas handler
       canvas.addEventListener('mouseup', e => {
+        const originated = _mousedownOnCanvas;
+        _mousedownOnCanvas = false;
         if (e.button !== 0) return;
+        // Ignore mouseup that re-fires on canvas because its original target (e.g. modal card)
+        // was removed from the DOM — require mousedown to have also happened on canvas.
+        if (!originated) return;
         const dist = Math.hypot(e.clientX - _clickDownX, e.clientY - _clickDownY);
         if (dist > 5) return; // был drag, не клик
         // Не реагируем если тащим аксессуар или шасси
@@ -233,8 +241,14 @@
     function getTheta()       { return theta; }
     function getPhi()         { return phi; }
     function getRadius()      { return radius; }
+    function resetView() {
+      theta  = 36.0  * Math.PI / 180;
+      phi    = 86.2  * Math.PI / 180;
+      radius = 5.240;
+      target.set(0.450, 1.092, 0.152);
+    }
 
-    return { init, update, setView, setTarget, getTarget, getTheta, getPhi, getRadius };
+    return { init, update, setView, setTarget, getTarget, getTheta, getPhi, getRadius, resetView };
   })();
 
   /* ── Camera presets ─────────────────────────────── */

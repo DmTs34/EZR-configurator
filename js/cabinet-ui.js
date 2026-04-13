@@ -734,7 +734,8 @@ function _onValidCode(code) {
   _setUseConfigBtn(true);
   if (window.CabinetDrag) CabinetDrag.clear();
   _rebuildBOM();
-  if (window.CabinetBuilder) CabinetBuilder.build(code, { xOffset: Cabinet.currentCabinetXOffset, noFitCamera: true });
+  // Skip build while preset gallery is rendering — gallery cleanup will build after abort
+  if (window.CabinetBuilder && !_presetsActive) CabinetBuilder.build(code, { xOffset: Cabinet.currentCabinetXOffset, noFitCamera: true });
   _lastBuiltCode = code;
 }
 
@@ -1236,7 +1237,8 @@ function saveConfig() {
       xOffset:           c.xOffset,
       rowIdx:            c.rowIdx ?? 0,
       label:             c.label,
-      placedAccessories: (c.placedAccessories || []).map(a => ({ code: a.code, snapId: a.snapId })),
+      cloneGroupId:      c.cloneGroupId,
+      placedAccessories: (c.placedAccessories || []).map(a => ({ code: a.code, snapId: a.snapId, parentSnapId: a.parentSnapId ?? null, parentType: a.parentType ?? null, rotated: a.rotated ?? false })),
       placedChassis:     (c.placedChassis || []).map(ch => ({ code: ch.code, slotIdx: ch.slotIdx, heightU: ch.heightU })),
     })),
   };
@@ -1266,6 +1268,9 @@ async function _applyConfig(data) {
   await CabinetBuilder.rebuildAllCabinetsFromState();
   if (window.CabinetArrow) CabinetArrow.rebuildAll?.();
   if (window.CabinetFloor) CabinetFloor.update?.();
+
+  // Position next new cabinet after the rightmost existing one in row 0
+  Cabinet.currentCabinetXOffset = _confirmedRightEdge();
 
   if (data.camera && window.CabinetControls) {
     const c = data.camera;
@@ -1325,6 +1330,7 @@ const ACCESSORY_CATALOG = [
   { code: 'EZR_MDL-L224-NT',      label: 'Module 224 mm',         desc: 'Long mandrel' },
   { code: 'EZR_RET',              label: 'Retaining Clip',        desc: 'Cable retainer' },
   { code: 'EZR_ROUT-BRKT',        label: 'Routing Bracket',       desc: 'Cable routing bracket' },
+  { code: 'EZR_ROUT-PLT',         label: 'Routing Plate',         desc: 'Attaches to Routing Bracket' },
   { code: 'EZR_SEP_PLT-4U-horiz', label: 'Separator Plate 4U H', desc: 'Separator plate, 4U' },
   { code: 'EZR_SEP_PLT-4U',       label: 'Separator Plate 4U',   desc: 'Separator plate, 4U' },
   { code: 'EZR_TBRKT',            label: 'EZR-TBRKT',            desc: 'Tie bracket' },
@@ -1994,6 +2000,7 @@ function useEZRConfig() {
 
 const _presetThumbs  = {};  // code → dataURL cache
 let   _presetsActive = false;
+let   _galleryAborted = false;  // set by selectPreset to stop gallery mid-render
 
 function togglePresetGallery() {
   openModal('presetModal');
@@ -2005,6 +2012,8 @@ function selectPreset(code) {
   closeModal('presetModal');
   const parsed = parseCode(code);
   if (!parsed) { showToast('Invalid preset code', 'error'); return; }
+  // Abort any in-progress gallery rendering so it doesn't overwrite the scene
+  _galleryAborted = true;
   Cabinet.wizardSelections = parsed;
   Cabinet.noFadeNext = true;
   _applySelectionsToCode();
@@ -2015,9 +2024,13 @@ function selectPreset(code) {
 async function _renderPresetGallery() {
   if (_presetsActive) return;
   _presetsActive = true;
+  _galleryAborted = false;
 
   const grid = document.getElementById('presetGrid');
   if (!grid) { _presetsActive = false; return; }
+
+  // Capture origCode BEFORE the render loop (loop overwrites Cabinet.descriptionCode)
+  const origCode = Cabinet.descriptionCode;
 
   // Hide viewport and door controls during rendering
   const overlay = document.getElementById('viewportLoading');
@@ -2046,6 +2059,9 @@ async function _renderPresetGallery() {
 
   // Render thumbnails one by one — try static file first, fall back to Three.js
   for (const p of PRESET_CONFIGS) {
+    // User selected a preset — stop rendering and leave scene as-is
+    if (_galleryAborted) break;
+
     if (_presetThumbs[p.code]) {
       _applyThumb(p.code, _presetThumbs[p.code]);
       continue;
@@ -2066,22 +2082,34 @@ async function _renderPresetGallery() {
     }
   }
 
-  // Restore the previously active cabinet (or clear)
-  const origCode = Cabinet.descriptionCode;
-  if (origCode && Cabinet.isCodeValid) {
-    const origToast = window.showToast;
-    window.showToast = () => {};
-    await CabinetBuilder.build(origCode, { noFade: true, xOffset: Cabinet.currentCabinetXOffset }).catch(() => {});
-    window.showToast = origToast;
+  const origToast = window.showToast;
+  window.showToast = () => {};
+  if (_galleryAborted) {
+    // User selected a preset while gallery was rendering.
+    // _onValidCode skipped the build, so we do it here after the thumbnail render settled.
+    const selectedCode = Cabinet.descriptionCode;
+    const selectedXOff = Cabinet.currentCabinetXOffset;
+    if (selectedCode && Cabinet.isCodeValid) {
+      await CabinetBuilder.build(selectedCode, { noFade: true, xOffset: selectedXOff }).catch(() => {});
+    } else {
+      CabinetBuilder.clearAssembly({ noFade: true });
+    }
   } else {
-    CabinetBuilder.clearAssembly({ noFade: true });
+    // Restore the previously active cabinet (or clear)
+    if (origCode && Cabinet.isCodeValid) {
+      await CabinetBuilder.build(origCode, { noFade: true, xOffset: Cabinet.currentCabinetXOffset }).catch(() => {});
+    } else {
+      CabinetBuilder.clearAssembly({ noFade: true });
+    }
   }
+  window.showToast = origToast;
 
-  // Hide overlay only after restore is fully complete, then restore door controls
+  // Hide overlay and restore door controls
   if (overlay) overlay.style.display = 'none';
   _updateDoorControls();
 
   _presetsActive = false;
+  _galleryAborted = false;
 }
 
 function _applyThumb(code, dataURL) {
@@ -2504,6 +2532,7 @@ function onGoToChassisStep() {
 
   activateStep('step3');
   completeStep('step2');
+  document.getElementById('step2')?.classList.add('collapsed');
 
   const el = document.getElementById('step3');
   if (el) el.scrollIntoView({ behavior: 'smooth' });
@@ -2575,7 +2604,6 @@ function onReadyClick() {
   // Show locked (dim) highlight
   if (p) CabinetBuilder.showLockedHighlight(Cabinet.cabinets[idx].xOffset, p.widthMM, idx, Cabinet.cabinets[idx].rowIdx ?? 0);
 
-  console.log('[Cabinet] onReadyClick: calling CabinetFloor.update() for row', Cabinet.cabinets[idx].rowIdx ?? 0);
   CabinetFloor.update();
 
   // Reset active state — ready for new cabinet
@@ -2654,6 +2682,12 @@ async function switchToCabinetEdit(idx) {
   completeStep('step1');
   activateStep('step2');
   activateStep('step3');
+  const btnGoToStep3 = document.getElementById('btnGoToStep3');
+  if (btnGoToStep3) btnGoToStep3.style.display = 'none';
+  if (window.CabinetChassis) {
+    CabinetChassis.renderCards();
+    CabinetChassis.renderThumbs();
+  }
   unlockStep('step4');
   _setUseConfigBtn(true);
   _rebuildBOM();
@@ -2668,6 +2702,8 @@ function _resetForNextCabinet() {
     el.classList.remove('completed');
     if (id !== 'step1') el.classList.add('locked', 'collapsed');
   });
+  const btnGoToStep3 = document.getElementById('btnGoToStep3');
+  if (btnGoToStep3) btnGoToStep3.style.display = '';
   if (window.CabinetChassis) CabinetChassis.clear();
   _resetCodeState();
   _expandStep1?.();

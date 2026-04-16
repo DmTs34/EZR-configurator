@@ -63,6 +63,26 @@
 }
 .bom-btn:hover { background: rgba(255,255,255,0.16); }
 
+/* ── ODF Catalog button ─────────────────────────────── */
+.catalog-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.75);
+  border: 1px solid rgba(255,255,255,0.18);
+  padding: 5px 12px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+.catalog-btn:hover {
+  background: rgba(74, 168, 216, 0.18);
+  border-color: rgba(74, 168, 216, 0.5);
+  color: #fff;
+}
+
 /* ── Scene preview mode button ──────────────────────── */
 .preview-mode-btn {
   display: flex;

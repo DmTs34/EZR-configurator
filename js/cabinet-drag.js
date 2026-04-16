@@ -993,7 +993,8 @@ window.CabinetDrag = (function () {
     _mouseDownIdx = -1;
     _canvas.style.cursor = '';
 
-    if (_ghostEl)   { _ghostEl.remove();          _ghostEl   = null; }
+    _purgeGhostLabels();
+    _ghostEl = null;
     if (_ghostMesh) { _scene.remove(_ghostMesh);  _ghostMesh = null; }
     _hideMarkers();
     _snapPts = [];
@@ -1139,8 +1140,14 @@ window.CabinetDrag = (function () {
   /* ══════════════════════════════════════════════════
      Misc helpers
   ══════════════════════════════════════════════════ */
+  function _purgeGhostLabels() {
+    document.querySelectorAll('.drag-ghost-label').forEach(el => el.remove());
+  }
+
   function _makeGhostLabel(text, cx, cy) {
+    _purgeGhostLabels();  // remove any stale labels from previous drags
     const el = document.createElement('div');
+    el.className = 'drag-ghost-label';
     el.style.cssText = [
       'position:fixed', 'pointer-events:none', 'z-index:9999',
       'background:#fff', 'border:2px solid #4c8cf5', 'border-radius:6px',

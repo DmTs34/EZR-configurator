@@ -88,6 +88,21 @@ var CONFIGURATIONS_CATALOG = [
   },
 
   {
+    id:        'example-1',
+    name:      '4× ODF 46U LISA 1500',
+    file:      'examples/configurations/Example 1.json',
+    image:     'examples/configurations/images/example-1.png',
+    shortDesc: '4 open-frame cabinets 46U 1500 mm wide, each fully loaded with LISA 6U LEFT + RIGHT chassis',
+    specs: {
+      'Base rack':               '4× EZR_OP 46U, 1500 mm wide',
+      'Chassis per cabinet':     '7× LISA 6U LEFT + 7× LISA 6U RIGHT',
+      'Total cabinets':          '4',
+      'Row width':               '6000 mm',
+      'Cable entry':             'Open frame',
+    },
+  },
+
+  {
     id:        'odf-lisa-900-max-left',
     name:      'ODF 46U LISA 900 MAX LEFT',
     file:      'examples/configurations/ODF-LISA-900-MAX-LEFT.json',

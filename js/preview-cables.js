@@ -19,7 +19,7 @@
 
 // Set to false to hide the points editor panel and camera statusbar,
 // showing only the 3D scene in the preview modal.
-window.PreviewPointsEditVisible = false;
+window.PreviewPointsEditVisible = true;
 
 // Standard cable type colours.
 // Use the 'type' field in a cable object instead of a free-form 'color'.
@@ -232,6 +232,16 @@ window.PreviewCablesConfig = {
     animation: { enabled: true, mode: 'sequential', duration: 0.5 },
     waypoints: [],
     cables: [],
+  },
+  'example-1': {
+    camera:    { theta: 0, phi: 85.94, radius: 7.208, target: { x: 3, y: 1.0919, z: 0.225 } },
+    animation: { enabled: true, mode: 'sequential', duration: 0.5 },
+    waypointGroups: [
+      { id: 'default', waypoints: [
+      ] },
+    ],
+    cables: [
+    ],
   },
 
     'odf-lisa-600-splice-left-top': {

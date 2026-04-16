@@ -2093,6 +2093,29 @@ window.CabinetBuilder = (function () {
     if (_labelContainer) _labelContainer.style.display = v ? '' : 'none';
   }
 
+  /**
+   * Snapshot the internal mesh/label tracking arrays so they can be fully
+   * restored after a temporary scene-swap (e.g. config preview).
+   * NOTE: saves references, not deep copies — the DOM nodes and THREE objects
+   * must not be disposed between save and restore.
+   */
+  function saveBuilderState() {
+    return {
+      lockedAssemblies: _lockedAssemblies.slice(),
+      lockedHighlights: _lockedHighlights.slice(),
+      labelAnchors:     _labelAnchors.slice(),
+    };
+  }
+
+  function restoreBuilderState(s) {
+    _lockedAssemblies.length = 0;
+    _lockedHighlights.length = 0;
+    _labelAnchors.length     = 0;
+    s.lockedAssemblies.forEach(function (x) { _lockedAssemblies.push(x); });
+    s.lockedHighlights.forEach(function (x) { _lockedHighlights.push(x); });
+    s.labelAnchors.forEach    (function (x) { _labelAnchors.push(x); });
+  }
+
   function setHighlightsVisible(v) {
     if (_highlightMesh) _highlightMesh.visible = v;
     for (const { mesh } of _lockedHighlights) {
@@ -2118,6 +2141,8 @@ window.CabinetBuilder = (function () {
     showLockedHighlight,
     removeLockedHighlight,
     clearLockedHighlights,
+    saveBuilderState,
+    restoreBuilderState,
     updateLabel,
     updateLabelOverlays,
     getSnapPoints,

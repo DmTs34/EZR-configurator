@@ -294,13 +294,16 @@ window.CabinetChassis = (function () {
   }
 
   function _makeGhostLabel(code, cx, cy) {
+    document.querySelectorAll('.drag-ghost-label').forEach(el => el.remove());
     const el = document.createElement('div');
-    el.style.cssText = `
-      position: fixed; left: ${cx}px; top: ${cy}px;
-      background: #4c8cf5; color: white; padding: 4px 8px;
-      border-radius: 3px; font-size: 12px; pointer-events: none;
-      z-index: 9999; white-space: nowrap;
-    `;
+    el.className = 'drag-ghost-label';
+    el.style.cssText = [
+      'position:fixed', 'pointer-events:none', 'z-index:9999',
+      `left:${cx}px`, `top:${cy}px`,
+      'background:#fff', 'border:2px solid #4c8cf5', 'border-radius:6px',
+      'padding:4px 10px', 'font-size:11px', 'font-weight:600', 'color:#2563eb',
+      'box-shadow:0 4px 16px rgba(0,0,0,.2)', 'white-space:nowrap',
+    ].join(';');
     el.textContent = code;
     document.body.appendChild(el);
     return el;
@@ -827,10 +830,8 @@ window.CabinetChassis = (function () {
     _nearSlot = -1;
     _canDrop = false;
 
-    if (_ghostEl) {
-      _ghostEl.remove();
-      _ghostEl = null;
-    }
+    document.querySelectorAll('.drag-ghost-label').forEach(el => el.remove());
+    _ghostEl = null;
 
     // Only remove ghost mesh if it was loaded from card (not a moved/copied placed mesh)
     // For moves/copies, the ghost mesh IS a placed mesh that should stay in scene

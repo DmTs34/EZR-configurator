@@ -1303,10 +1303,10 @@ async function _applyConfig(data) {
   if (window.CabinetArrow) CabinetArrow.rebuildAll?.();
   if (window.CabinetFloor) CabinetFloor.update?.();
 
-  // Restore door angle and opacity
+  // Apply door angle and opacity from the config file
   const anEl = document.getElementById('doorAngle');
   const opEl = document.getElementById('doorOpacity');
-  if (anEl) { anEl.value = data.doorAngle ?? 0; applyDoorAngle(anEl.value); }
+  if (anEl) { anEl.value = data.doorAngle ?? 0;   applyDoorAngle(anEl.value); }
   if (opEl) { opEl.value = data.doorOpacity ?? 100; applyDoorOpacity(opEl.value); }
   _updateDoorControls();
 
@@ -1352,6 +1352,53 @@ async function loadExample(path) {
     showToast('Failed to load example: ' + err.message, 'error');
   }
 }
+
+/**
+ * Append all cabinets from a config file to the current active row,
+ * starting right after the rightmost existing cabinet.
+ * Unlike loadExample / _applyConfig, this does NOT clear the existing scene.
+ */
+async function appendConfigToScene(path) {
+  try {
+    const resp = await fetch(path);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (!Array.isArray(data.cabinets) || !data.cabinets.length) return;
+
+    const baseOffset = _confirmedRightEdge();
+    const activeRow  = Cabinet.activeRowIdx ?? 0;
+    // Normalise so the first cabinet in the loaded config starts at baseOffset
+    const minX = Math.min(...data.cabinets.map(c => c.xOffset ?? 0));
+
+    for (const cab of data.cabinets) {
+      const newIdx = Cabinet.cabinets.length;  // index this cabinet will occupy
+      Cabinet.cabinets.push(Object.assign({}, cab, {
+        xOffset: baseOffset + (cab.xOffset ?? 0) - minX,
+        rowIdx:  activeRow,
+        label:  `ODF #${newIdx + 1}`,          // sequential across the whole row
+      }));
+    }
+
+    await CabinetBuilder.rebuildAllCabinetsFromState();
+    if (window.CabinetArrow) CabinetArrow.rebuildAll?.();
+    if (window.CabinetFloor) CabinetFloor.update?.();
+
+    // Re-apply user's current door settings to all newly built meshes
+    const anEl = document.getElementById('doorAngle');
+    const opEl = document.getElementById('doorOpacity');
+    if (anEl) applyDoorAngle(anEl.value);
+    if (opEl) applyDoorOpacity(opEl.value);
+
+    Cabinet.currentCabinetXOffset = _confirmedRightEdge();
+    _resetForNextCabinet();
+    _rebuildBOM();
+    if (window.CabinetUI) CabinetUI.updateCabinetList?.();
+    showToast('Configuration appended', 'success');
+  } catch (err) {
+    showToast('Failed to append config: ' + err.message, 'error');
+  }
+}
+window.appendConfigToScene = appendConfigToScene;
 
 function exportBOM() {
   if (!Cabinet.bom.length) { showToast('BOM is empty','error'); return; }

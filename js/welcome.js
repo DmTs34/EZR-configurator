@@ -87,9 +87,16 @@
      Configuration gallery
   ────────────────────────────────────────────────────── */
 
+  var _galleryOpenedFromApp = false;
+
   function backToWelcome() {
     var overlay = document.getElementById('configGalleryOverlay');
     if (overlay) overlay.classList.remove('visible');
+    if (_galleryOpenedFromApp) {
+      // Came from main app — just close the overlay, no welcome screen
+      _galleryOpenedFromApp = false;
+      return;
+    }
     var screen = document.getElementById('welcomeScreen');
     if (screen) {
       screen.style.display = '';
@@ -104,6 +111,8 @@
     _renderGallery();
     overlay.classList.add('visible');
   }
+
+  var _galleryListenerAdded = false;
 
   function _renderGallery() {
     var grid = document.getElementById('configGalleryGrid');
@@ -137,13 +146,17 @@
         + '</div>';
     }).join('');
 
-    // Event delegation
-    grid.addEventListener('click', function (e) {
-      var eye = e.target.closest('[data-eye]');
-      if (eye) { e.stopPropagation(); openConfigPreview(+eye.dataset.eye); return; }
-      var card = e.target.closest('[data-idx]');
-      if (card) openConfigPreview(+card.dataset.idx);
-    });
+    // Attach click delegation only once — grid.innerHTML replaces DOM nodes
+    // but the listener stays on the grid element itself; guard against duplicates
+    if (!_galleryListenerAdded) {
+      _galleryListenerAdded = true;
+      grid.addEventListener('click', function (e) {
+        var eye = e.target.closest('[data-eye]');
+        if (eye) { e.stopPropagation(); openConfigPreview(+eye.dataset.eye); return; }
+        var card = e.target.closest('[data-idx]');
+        if (card) openConfigPreview(+card.dataset.idx);
+      });
+    }
   }
 
   function _esc(str) {
@@ -186,6 +199,55 @@
     var _raf        = null;
     var _canvas     = null;
     var _configFile = null;
+
+    /* ── Cabinet state snapshot ──────────────────────── */
+    var _savedCabinetState = null;
+    var _savedBuilderState = null;
+
+    function _saveCabinetState() {
+      _savedCabinetState = {
+        projectName:            Cabinet.projectName,
+        inputMode:              Cabinet.inputMode,
+        descriptionCode:        Cabinet.descriptionCode,
+        wizardSelections:       JSON.parse(JSON.stringify(Cabinet.wizardSelections  || {})),
+        isCodeValid:            Cabinet.isCodeValid,
+        selectedFrameId:        Cabinet.selectedFrameId,
+        mountingPlates:         JSON.parse(JSON.stringify(Cabinet.mountingPlates    || [])),
+        rows:                   JSON.parse(JSON.stringify(Cabinet.rows              || [])),
+        activeRowIdx:           Cabinet.activeRowIdx,
+        cabinets:               JSON.parse(JSON.stringify(Cabinet.cabinets          || [])),
+        currentCabinetXOffset:  Cabinet.currentCabinetXOffset,
+        editingIdx:             Cabinet.editingIdx,
+        bom:                    JSON.parse(JSON.stringify(Cabinet.bom               || [])),
+        placedAccessories:      JSON.parse(JSON.stringify(Cabinet.placedAccessories || [])),
+        placedChassis:          JSON.parse(JSON.stringify(Cabinet.placedChassis     || [])),
+        activeStep:             Cabinet.activeStep,
+        noFadeNext:             Cabinet.noFadeNext,
+      };
+    }
+
+    function _restoreCabinetState() {
+      if (!_savedCabinetState) return;
+      var s = _savedCabinetState;
+      Cabinet.projectName           = s.projectName;
+      Cabinet.inputMode             = s.inputMode;
+      Cabinet.descriptionCode       = s.descriptionCode;
+      Cabinet.wizardSelections      = s.wizardSelections;
+      Cabinet.isCodeValid           = s.isCodeValid;
+      Cabinet.selectedFrameId       = s.selectedFrameId;
+      Cabinet.mountingPlates        = s.mountingPlates;
+      Cabinet.rows                  = s.rows;
+      Cabinet.activeRowIdx          = s.activeRowIdx;
+      Cabinet.cabinets              = s.cabinets;
+      Cabinet.currentCabinetXOffset = s.currentCabinetXOffset;
+      Cabinet.editingIdx            = s.editingIdx;
+      Cabinet.bom                   = s.bom;
+      Cabinet.placedAccessories     = s.placedAccessories;
+      Cabinet.placedChassis         = s.placedChassis;
+      Cabinet.activeStep            = s.activeStep;
+      Cabinet.noFadeNext            = s.noFadeNext;
+      _savedCabinetState = null;
+    }
 
     var _theta  = 0.5;
     var _phi    = 1.1;
@@ -508,6 +570,17 @@
       if (window.CabinetChassis) CabinetChassis.setScene(_scene);
       if (window.CabinetDrag)    CabinetDrag.setScene(_scene);
 
+      // Save Cabinet data state so close() can restore it cleanly
+      _saveCabinetState();
+
+      // Save CabinetBuilder's mesh/label tracking arrays and replace them with
+      // empty ones so that clearAll() inside _applyConfig does NOT remove the
+      // original label DOM elements or highlight meshes from the main scene.
+      if (window.CabinetBuilder && CabinetBuilder.saveBuilderState) {
+        _savedBuilderState = CabinetBuilder.saveBuilderState();
+        CabinetBuilder.restoreBuilderState({ lockedAssemblies: [], lockedHighlights: [], labelAnchors: [] });
+      }
+
       // Load config — cabinets + chassis + accessories all go into _scene
       var origToast = window.showToast;
       window.showToast = function () {};
@@ -556,6 +629,15 @@
         _CablesEditor.open(cfgKey);
       }
 
+      // Update open-button label based on whether the main scene already has cabinets
+      var openBtn = document.querySelector('.config-preview-open-btn');
+      if (openBtn) {
+        var hasCabs = _savedCabinetState
+          ? (_savedCabinetState.cabinets && _savedCabinetState.cabinets.length > 0)
+          : (Cabinet.cabinets && Cabinet.cabinets.length > 0);
+        openBtn.textContent = hasCabs ? 'Add to active row \u2192' : 'Open for editing \u2192';
+      }
+
       // Hide loading overlay and start render loop
       if (loadingEl) loadingEl.style.display = 'none';
       _loop();
@@ -588,6 +670,16 @@
       if (window.CabinetDrag)    CabinetDrag.setScene(_mainScene);
       if (_mainScene) Cabinet.scene = _mainScene;
 
+      // Restore Cabinet data state (loadExample overwrote it during preview)
+      _restoreCabinetState();
+
+      // Restore CabinetBuilder's mesh/label tracking — original DOM label
+      // elements and 3D highlight meshes are back in play
+      if (_savedBuilderState && window.CabinetBuilder && CabinetBuilder.restoreBuilderState) {
+        CabinetBuilder.restoreBuilderState(_savedBuilderState);
+        _savedBuilderState = null;
+      }
+
       // Dispose isolated scene
       if (_scene) {
         _scene.traverse(function (obj) {
@@ -609,6 +701,11 @@
     /* ── Open for editing ─────────────────────────────── */
     async function openForEditing() {
       var file = _configFile;
+
+      // Decide before tearing down: does the main scene already have cabinets?
+      var hasExisting = _savedCabinetState
+        ? (_savedCabinetState.cabinets && _savedCabinetState.cabinets.length > 0)
+        : (Cabinet.cabinets && Cabinet.cabinets.length > 0);
 
       if (window._CablesEditor) {
         _CablesEditor.close();
@@ -646,12 +743,50 @@
       // Restore arrow visibility before loading into main scene
       if (window.CabinetArrow) CabinetArrow.setVisible(true);
 
-      // Load config into main scene (GLBs are browser-cached — fast)
-      if (file && typeof loadExample === 'function') await loadExample(file);
+      // Builder state is no longer needed — scene will be fully rebuilt
+      _savedBuilderState = null;
+
+      if (file) {
+        // Capture user's door settings before any load overwrites them
+        var anEl = document.getElementById('doorAngle');
+        var opEl = document.getElementById('doorOpacity');
+        var userAngle   = anEl ? anEl.value : null;
+        var userOpacity = opEl ? opEl.value : null;
+
+        if (hasExisting) {
+          // Append to existing row — restore saved state first so the
+          // main scene reflects the original cabinets, then append.
+          // appendConfigToScene already re-applies current UI door values internally.
+          _restoreCabinetState();
+          if (typeof appendConfigToScene === 'function') await appendConfigToScene(file);
+        } else {
+          // Scene is empty — discard saved state and do a full replace.
+          // loadExample applies config's door values; we override them below.
+          _savedCabinetState = null;
+          if (typeof loadExample === 'function') await loadExample(file);
+        }
+
+        // Restore user's door settings on the main scene
+        if (userAngle   !== null && typeof applyDoorAngle   === 'function') { anEl.value = userAngle;   applyDoorAngle(userAngle); }
+        if (userOpacity !== null && typeof applyDoorOpacity === 'function') { opEl.value = userOpacity; applyDoorOpacity(userOpacity); }
+      } else {
+        _savedCabinetState = null;
+      }
     }
 
     return { open: open, close: close, openForEditing: openForEditing };
   })();
+
+  function openConfigGallery() {
+    // Open the gallery directly from the main app (no welcome screen needed)
+    var overlay = document.getElementById('configGalleryOverlay');
+    if (!overlay) return;
+    _galleryOpenedFromApp = true;
+    _renderGallery();
+    overlay.classList.add('visible');
+    overlay.style.display = '';
+  }
+  window.openConfigGallery = openConfigGallery;
 
   function openConfigPreview(idx) {
     _ConfigPreview.open(idx);

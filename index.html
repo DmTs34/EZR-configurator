@@ -7,8 +7,114 @@
   <link rel="stylesheet" href="css/cabinet/base.css">
   <link rel="stylesheet" href="css/cabinet/layout.css">
   <link rel="stylesheet" href="css/cabinet/components.css">
+  <link rel="stylesheet" href="css/cabinet/intro.css">
 </head>
 <body>
+
+<!-- ════════════════════════════════════════════════════
+     WELCOME SCREEN
+════════════════════════════════════════════════════ -->
+<div id="welcomeScreen">
+
+  <!-- Loading phase -->
+  <div id="welcomeLoading">
+    <div class="welcome-logo-text">EZR <span style="font-weight:300;opacity:0.7">— Each Zone Rack</span></div>
+    <div class="welcome-logo-sub">Cabinet Configuration Tool</div>
+    <div class="welcome-progress">
+      <div class="welcome-progress-bar" id="welcomeProgressBar"></div>
+    </div>
+    <div class="welcome-status" id="welcomeStatus">Initializing…</div>
+    <div class="welcome-spinner"></div>
+  </div>
+
+  <!-- Cards phase (shown after scene is ready) -->
+  <div id="welcomeCards">
+    <div class="welcome-intro-content">
+      <div class="welcome-intro-logo">EZR <span style="font-weight:300;opacity:0.6">— Each Zone Rack</span></div>
+      <div class="welcome-intro-subtitle">Choose how you want to work today</div>
+      <div class="welcome-intro-cards">
+
+        <div class="welcome-card" onclick="selectWelcomeMode('presets')">
+          <div class="welcome-card-level">Basic</div>
+          <div class="welcome-card-icon">📦</div>
+          <div class="welcome-card-title">Ready configurations</div>
+          <div class="welcome-card-desc">
+            Browse pre-built ODF configurations, preview them in 3D and open for editing.
+          </div>
+          <div class="welcome-card-badge">ODF Catalog</div>
+        </div>
+
+        <div class="welcome-card" onclick="selectWelcomeMode('custom')">
+          <div class="welcome-card-level">Advanced</div>
+          <div class="welcome-card-icon">⚙️</div>
+          <div class="welcome-card-title">Configure your ODF</div>
+          <div class="welcome-card-desc">
+            Build your own EZR cabinet from scratch using the step-by-step configurator.
+          </div>
+          <div class="welcome-card-badge">Custom configuration</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div><!-- /welcomeScreen -->
+
+<!-- ════════════════════════════════════════════════════
+     CONFIG GALLERY OVERLAY
+════════════════════════════════════════════════════ -->
+<div id="configGalleryOverlay">
+  <div class="config-gallery-header">
+    <button class="config-gallery-back" onclick="backToWelcome()">&#8592; Back</button>
+    <div class="config-gallery-title">Ready ODF configurations</div>
+    <div class="config-gallery-hint">Click a card or the eye icon to preview in 3D</div>
+  </div>
+  <div class="config-gallery-body">
+    <div class="config-gallery-grid" id="configGalleryGrid"></div>
+  </div>
+</div><!-- /configGalleryOverlay -->
+
+<!-- ════════════════════════════════════════════════════
+     CONFIG PREVIEW MODAL
+════════════════════════════════════════════════════ -->
+<div class="modal" id="configPreviewModal" onclick="closeConfigPreview()">
+  <div class="modal-box modal-box-config-preview" onclick="event.stopPropagation()">
+
+    <div class="modal-header">
+      <h2 class="modal-title" id="configPreviewTitle"></h2>
+      <button class="modal-close" onclick="closeConfigPreview()">✕</button>
+    </div>
+
+    <div class="config-preview-body">
+
+      <!-- Left: isolated Three.js scene -->
+      <div class="config-preview-scene">
+        <canvas id="configPreviewCanvas"></canvas>
+        <div class="config-preview-loading" id="configPreviewLoadingOverlay">
+          <div class="config-preview-loading-spinner"></div>
+          <span>Loading configuration…</span>
+        </div>
+        <div class="cable-legend">
+          <div class="cable-legend-row"><span class="cable-legend-dot" style="background:#1e6e3a"></span>Optipack / MTP trunks</div>
+          <div class="cable-legend-row"><span class="cable-legend-dot" style="background:#333333"></span>Protective tubes</div>
+          <div class="cable-legend-row"><span class="cable-legend-dot" style="background:#e07020"></span>Cross-connections</div>
+          <div class="cable-legend-row"><span class="cable-legend-dot" style="background:#8b1a1a"></span>Patching out</div>
+          <div class="cable-legend-row"><span class="cable-legend-dot" style="background:#888888"></span>Cable</div>
+        </div>
+      </div>
+
+      <!-- Middle: cables editor (visible when PreviewPointsEditVisible) -->
+      <div id="configCablesEditor" class="cables-editor" style="display:none"></div>
+
+      <!-- Right: description + action -->
+      <div class="config-preview-info">
+        <div class="config-preview-info-desc" id="configPreviewDesc"></div>
+        <button class="config-preview-open-btn" onclick="openConfigForEditing()">Open for editing →</button>
+      </div>
+
+    </div>
+  </div>
+</div><!-- /configPreviewModal -->
 
 <!-- ════════════════════════════════════════════════════
      HEADER
@@ -24,6 +130,12 @@
   <button class="bom-btn" onclick="activateStep('step4');toggleStep('step4')">
     <span>BOM</span>
     <span class="bom-count" id="bomCount">0</span>
+  </button>
+  <button class="preview-mode-btn" id="previewModeBtn" onclick="ScenePreview.toggle()" title="Scene preview">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+      <circle cx="12" cy="12" r="3"/>
+    </svg>
   </button>
 </header>
 
@@ -163,6 +275,9 @@
   <div class="viewport">
     <canvas id="cabinet-canvas"></canvas>
 
+    <!-- Scene preview mode — blocks canvas interaction when active -->
+    <div id="scenePreviewOverlay" style="display:none"></div>
+
     <div class="viewport-loading" id="viewportLoading">
       <div class="spinner"></div>
       <span>Initialising scene…</span>
@@ -174,10 +289,12 @@
       <button class="cam-btn" onclick="CabinetCamera.setView('top')">Top</button>
       <button class="cam-btn" onclick="CabinetCamera.setView('iso')">Iso</button>
       <button class="cam-btn cam-btn--ortho" id="orthoBtn" onclick="CabinetCamera.toggleOrtho()">Persp</button>
+      <button class="cam-btn cam-btn--ortho" id="edgesBtn" onclick="SceneEdges.toggle()">Edges</button>
     </div>
 
     <!-- Door controls overlay (top-left) -->
     <div class="door-controls" id="doorControls" style="display:none">
+      <div class="door-ctrl-title">Door controls</div>
       <div class="door-ctrl-row">
         <span class="door-ctrl-label">Transparency</span>
         <input type="range" id="doorOpacity" min="0" max="100" value="100"
@@ -389,6 +506,13 @@
       <div class="preview-canvas-wrap">
         <canvas id="previewCanvas"></canvas>
         <div class="camera-statusbar" id="previewStatusbar"></div>
+        <div class="cable-legend">
+          <div class="cable-legend-row"><span class="cable-legend-dot" style="background:#1e6e3a"></span>Optipack / MTP trunks</div>
+          <div class="cable-legend-row"><span class="cable-legend-dot" style="background:#333333"></span>Protective tubes</div>
+          <div class="cable-legend-row"><span class="cable-legend-dot" style="background:#e07020"></span>Cross-connections</div>
+          <div class="cable-legend-row"><span class="cable-legend-dot" style="background:#8b1a1a"></span>Patching out</div>
+          <div class="cable-legend-row"><span class="cable-legend-dot" style="background:#888888"></span>Cable</div>
+        </div>
       </div>
       <div id="cablesEditor" class="cables-editor" style="display:none"></div>
     </div>
@@ -406,6 +530,11 @@
 ════════════════════════════════════════════════════ -->
 <script src="libs/three.min.js"></script>
 <script src="libs/GLTFLoader.js"></script>
+<script src="libs/LineSegmentsGeometry.js"></script>
+<script src="libs/LineSegments2.js"></script>
+<script src="libs/LineMaterial.js"></script>
+<script src="libs/LineGeometry.js"></script>
+<script src="libs/Line2.js"></script>
 <script src="js/cabinet-state.js"></script>
 <script src="js/cabinet-utils.js"></script>
 <script src="js/cabinet-main.js"></script>
@@ -416,6 +545,10 @@
 <script src="js/cabinet-drag.js"></script>
 <script src="js/cabinet-chassis.js"></script>
 <script src="js/cabinet-arrow.js"></script>
+<script src="js/configurations-catalog.js"></script>
+<script src="js/scene-preview.js"></script>
+<script src="js/scene-edges.js"></script>
+<script src="js/welcome.js"></script>
 
 </body>
 </html>

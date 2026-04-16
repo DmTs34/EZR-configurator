@@ -1283,6 +1283,7 @@ window.CabinetDrag = (function () {
         }
 
         if (parentMesh) {
+          parentMesh.updateWorldMatrix(true, true);
           const childPts = CabinetBuilder.getAccOnAccSnapPoints(parentType, parentMesh);
           const snap = childPts.find(s => s.id === entry.snapId);
           if (snap) entry.mesh.position.copy(snap.position);
@@ -1411,7 +1412,9 @@ window.CabinetDrag = (function () {
     }
   }
 
-  return { init, clear, clearAll, finalizeCurrent, saveEditBack, loadForEdit, shiftLockedPlaced, rebuildAllAccessories, rebuildFromState, _isDragging: () => _dragging,
+  function setScene(s) { _scene = s; }
+
+  return { init, setScene, clear, clearAll, finalizeCurrent, saveEditBack, loadForEdit, shiftLockedPlaced, rebuildAllAccessories, rebuildFromState, _isDragging: () => _dragging,
     _repositionChildrenOfChassis(chassisCode, oldSlotIdx, newSlotIdx, cabinetIdx) {
       // Called by CabinetChassis after moving a chassis — repositions attached accessories
       // and updates their parentSnapId to the new slotIdx so save/load stays correct.

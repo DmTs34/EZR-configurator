@@ -56,9 +56,16 @@ window.CabinetChassis = (function () {
 
   /** Chassis catalog */
   const CHASSIS_CATALOG = [
-    { code: 'Chassis-LISA-6U-L',      label: 'LISA 6U-L',   desc: 'LISA chassis, 6U Left',  heightU: 6, section: 'L' },
-    { code: 'Chassis-LISA-6U-R',      label: 'LISA 6U-R',   desc: 'LISA chassis, 6U Right', heightU: 6, section: 'R' },
-    { code: 'Chassis-EZR_ROUT-BRKT',  label: 'ROUT-BRKT 2U', desc: 'EZR routing bracket, 2U', heightU: 2 },
+    { code: 'Chassis-LISA-2U-L',      label: 'LISA 2U-L',    desc: 'LISA chassis, 2U Left',  heightU: 2, section: 'L' },
+    { code: 'Chassis-LISA-2U-R',      label: 'LISA 2U-R',    desc: 'LISA chassis, 2U Right', heightU: 2, section: 'R' },
+    { code: 'Chassis-LISA-6U-L',      label: 'LISA 6U-L',    desc: 'LISA chassis, 6U Left',  heightU: 6, section: 'L' },
+    { code: 'Chassis-LISA-6U-R',      label: 'LISA 6U-R',    desc: 'LISA chassis, 6U Right', heightU: 6, section: 'R' },
+    { code: 'Chassis-LISA-7U-L',      label: 'LISA 7U-L',    desc: 'LISA chassis, 7U Left',  heightU: 7, section: 'L' },
+    { code: 'Chassis-LISA-7U-R',      label: 'LISA 7U-R',    desc: 'LISA chassis, 7U Right', heightU: 7, section: 'R' },
+    { code: 'Chassis-EZR_ROUT-BRKT',  label: 'ROUT-BRKT 2U',   desc: 'EZR routing bracket, 2U',    heightU: 2 },
+    { code: 'Chassis-BOUT-PLT-LG-2U-bottom',    label: 'BOUT-PLT-LG 2U Bottom',      desc: 'Breakout plate large, 2U, bottom',            heightU: 2 },
+    { code: 'Chassis-BOUT-PLT-LG-2U-top',       label: 'BOUT-PLT-LG 2U Top',         desc: 'Breakout plate large, 2U, top',               heightU: 2 },
+    { code: 'Chassis-BOUT-PLT-LG-2U-with-trough', label: 'BOUT-PLT-LG 4U Top with Trough', desc: 'Breakout plate large, 2U, with cable trough', heightU: 4 },
   ];
 
   /* ══════════════════════════════════════════════════
@@ -1301,14 +1308,36 @@ window.CabinetChassis = (function () {
     }
   }
 
+  /**
+   * Reposition all active (_placed) chassis meshes to match new slot positions.
+   * Called when the cabinet code changes and DE stays the same but geometry shifts
+   * (e.g. width change), or as a safety net whenever the active cabinet is rebuilt.
+   */
+  function repositionPlaced(descCode, xOffset, rowIdx) {
+    for (const ch of _placed) {
+      const slots = _buildSlots(descCode, xOffset, rowIdx, ch.code);
+      const slot = slots[ch.slotIdx];
+      if (slot) {
+        ch.mesh.position.copy(slot.position);
+        ch.mesh.rotation.y = CabinetUtils.rowRotY(rowIdx);
+        const p = CabinetBuilder.parseCode(descCode);
+        if (p) ch.mesh.userData.deCode = p.de;
+      }
+    }
+  }
+
   /* ══════════════════════════════════════════════════
      PUBLIC API
   ════════════════════════════════════════════════════ */
 
+  function setScene(s) { _scene = s; }
+
   return {
     init,
+    setScene,
     clear,
     clearAll,
+    repositionPlaced,
     finalizeCurrent,
     saveEditBack,
     loadForEdit,

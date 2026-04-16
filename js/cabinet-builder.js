@@ -559,6 +559,7 @@ window.CabinetBuilder = (function () {
    *                        or null if invalid
    */
   function _parse(code) {
+    if (!code) return null;
     const parts = code.split('-');
     if (parts.length < 6) return null;
     const [pr, he, de, cov, as_, cl] = parts;
@@ -884,6 +885,7 @@ window.CabinetBuilder = (function () {
 
     el.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (window.ScenePreview && ScenePreview.isActive()) return;
       window.dispatchEvent(new CustomEvent('cabinetLabelContextMenu', {
         detail: { cabinetIdx, x: e.clientX, y: e.clientY }
       }));
@@ -2026,11 +2028,13 @@ window.CabinetBuilder = (function () {
         if (p) _showHighlight(_assembly, p.widthMM, cab.rowIdx ?? 0);
       }
     }
-    if (window.CabinetDrag?.rebuildAllAccessories) {
-      CabinetDrag.rebuildAllAccessories();
-    }
+    // Chassis must move first — child accessories parented to chassis use
+    // parentMesh.localToWorld(), so chassis positions must be current.
     if (window.CabinetChassis?.rebuildAllChassis) {
       CabinetChassis.rebuildAllChassis();
+    }
+    if (window.CabinetDrag?.rebuildAllAccessories) {
+      CabinetDrag.rebuildAllAccessories();
     }
   }
 
@@ -2053,10 +2057,12 @@ window.CabinetBuilder = (function () {
       showLockedHighlight(cab.xOffset, p.widthMM, i, cab.rowIdx ?? 0);
     }
     // Chassis must be rebuilt before accessories so acc-on-chassis snap points resolve correctly
-    if (window.CabinetChassis?.rebuildFromState)  CabinetChassis.rebuildFromState().then(() => {
-      if (window.CabinetDrag?.rebuildFromState) CabinetDrag.rebuildFromState();
-    });
-    else if (window.CabinetDrag?.rebuildFromState) CabinetDrag.rebuildFromState();
+    if (window.CabinetChassis?.rebuildFromState) {
+      await CabinetChassis.rebuildFromState();
+    }
+    if (window.CabinetDrag?.rebuildFromState) {
+      await CabinetDrag.rebuildFromState();
+    }
   }
 
   /**
@@ -2083,6 +2089,10 @@ window.CabinetBuilder = (function () {
     _clearHighlight();
   }
 
+  function setLabelsVisible(v) {
+    if (_labelContainer) _labelContainer.style.display = v ? '' : 'none';
+  }
+
   function setHighlightsVisible(v) {
     if (_highlightMesh) _highlightMesh.visible = v;
     for (const { mesh } of _lockedHighlights) {
@@ -2103,6 +2113,7 @@ window.CabinetBuilder = (function () {
     rebuildAllCabinetsFromState,
     buildInto,
     clearHighlight,
+    setLabelsVisible,
     setHighlightsVisible,
     showLockedHighlight,
     removeLockedHighlight,

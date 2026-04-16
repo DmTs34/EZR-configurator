@@ -1,0 +1,73 @@
+{
+  "projectName": "New Project",
+  "savedAt": "2026-04-15T14:31:04.516Z",
+  "camera": {
+    "theta": 0.5443185307179589,
+    "phi": 1.288473815219112,
+    "radius": 4.4399999999999995,
+    "target": {
+      "x": 0.45,
+      "y": 1.092,
+      "z": 0.152
+    }
+  },
+  "doorAngle": 87,
+  "doorOpacity": 100,
+  "rows": [
+    {
+      "id": 0,
+      "origin": {
+        "x": 0,
+        "z": 0
+      },
+      "angle": 0,
+      "flipped": false
+    }
+  ],
+  "cabinets": [
+    {
+      "code": "EZR_CL-46U-06LR0-DB00B1S11T1-A-GY",
+      "xOffset": 0,
+      "rowIdx": 0,
+      "label": "ODF #1",
+      "placedAccessories": [],
+      "placedChassis": [
+        {
+          "code": "Chassis-LISA-7U-L",
+          "slotIdx": 4,
+          "heightU": 7
+        },
+        {
+          "code": "Chassis-LISA-7U-L",
+          "slotIdx": 11,
+          "heightU": 7
+        },
+        {
+          "code": "Chassis-LISA-7U-L",
+          "slotIdx": 18,
+          "heightU": 7
+        },
+        {
+          "code": "Chassis-LISA-7U-L",
+          "slotIdx": 25,
+          "heightU": 7
+        },
+        {
+          "code": "Chassis-LISA-7U-L",
+          "slotIdx": 32,
+          "heightU": 7
+        },
+        {
+          "code": "Chassis-LISA-7U-L",
+          "slotIdx": 39,
+          "heightU": 7
+        },
+        {
+          "code": "Chassis-BOUT-PLT-LG-2U-bottom",
+          "slotIdx": 0,
+          "heightU": 2
+        }
+      ]
+    }
+  ]
+}

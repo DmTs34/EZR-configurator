@@ -165,7 +165,7 @@
         if (window.CabinetDrag   && CabinetDrag._isDragging   && CabinetDrag._isDragging())   return;
         if (window.CabinetChassis && CabinetChassis._isDragging && CabinetChassis._isDragging()) return;
         if (window.Cabinet && Cabinet.editingIdx >= 0 && window.onReadyClick) {
-          onReadyClick();
+          if (!window.ScenePreview || !ScenePreview.isActive()) onReadyClick();
         }
       });
     }

@@ -179,6 +179,7 @@ window.CabinetArrow = (function () {
         if (_arrows[rowIdx].labelEl) _arrows[rowIdx].labelEl.remove();
       }
       _arrows[rowIdx] = { mesh, labelEl, rowIdx };
+      if (_arrowsHidden) mesh.visible = false;
       _applyTransform(rowIdx);
       _updateArrowColor(rowIdx);
       _updateLabelStyle(rowIdx);
@@ -710,11 +711,15 @@ window.CabinetArrow = (function () {
   }
 
   /* ── Visibility (for clean image renders) ────────── */
+  var _arrowsHidden = false;
+
   function setVisible(v) {
+    _arrowsHidden = !v;
     for (const entry of _arrows) {
       if (entry?.mesh) entry.mesh.visible = v;
     }
     if (!v && _snapGroup) _snapGroup.visible = false;
+    if (_labelContainer) _labelContainer.style.display = v ? '' : 'none';
   }
 
   /* ── Public ───────────────────────────────────────── */

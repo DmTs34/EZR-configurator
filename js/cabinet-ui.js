@@ -732,10 +732,42 @@ function _onValidCode(code) {
   _renderCurrentCodeRow(code);
   completeStep('step1');
   _setUseConfigBtn(true);
-  if (window.CabinetDrag) CabinetDrag.clear();
+
+  // Only clear accessories when DE changes (different rail/snap layout).
+  // Changing PR (EZR_OP ↔ EZR_CL) or other non-DE parts keeps accessories intact.
+  const prevDE  = CabinetBuilder.parseCode?.(_lastBuiltCode)?.de ?? null;
+  const nextDE  = CabinetBuilder.parseCode?.(code)?.de ?? null;
+  const deChanged = prevDE !== null && nextDE !== null && prevDE !== nextDE;
+  if (deChanged && window.CabinetDrag && Cabinet.placedAccessories?.length) {
+    const confirmed = window.confirm(
+      'Changing the cabinet design will remove all placed accessories.\n\nContinue?'
+    );
+    if (!confirmed) {
+      // Revert wizard selections back to previous code
+      const prev = CabinetBuilder.parseCode(_lastBuiltCode);
+      if (prev) {
+        Cabinet.wizardSelections = {
+          pr: prev.pr, he: prev.he, de: prev.de, as: prev.as, cl: prev.cl,
+          doors: prev.doors, cov: prev.cov,
+        };
+        Cabinet.descriptionCode = _lastBuiltCode;
+        _renderCodeEditor();
+        _renderCurrentCodeRow(_lastBuiltCode);
+      }
+      return;
+    }
+    CabinetDrag.clear();
+  } else if (deChanged && window.CabinetDrag) {
+    CabinetDrag.clear();
+  }
+
   _rebuildBOM();
   // Skip build while preset gallery is rendering — gallery cleanup will build after abort
   if (window.CabinetBuilder && !_presetsActive) CabinetBuilder.build(code, { xOffset: Cabinet.currentCabinetXOffset, noFitCamera: true });
+  // Reposition active chassis to match new cabinet geometry
+  if (window.CabinetChassis && CabinetChassis.repositionPlaced) {
+    CabinetChassis.repositionPlaced(code, Cabinet.currentCabinetXOffset, Cabinet.activeRowIdx ?? 0);
+  }
   _lastBuiltCode = code;
 }
 
@@ -1231,6 +1263,8 @@ function saveConfig() {
       radius: ctrl.getRadius(),
       target: { x: ctrl.getTarget().x, y: ctrl.getTarget().y, z: ctrl.getTarget().z },
     } : null,
+    doorAngle:   Number(document.getElementById('doorAngle')?.value ?? 0),
+    doorOpacity: Number(document.getElementById('doorOpacity')?.value ?? 100),
     rows:     Cabinet.rows.map(r => ({ id: r.id, origin: { x: r.origin.x, z: r.origin.z }, angle: r.angle, flipped: r.flipped })),
     cabinets: Cabinet.cabinets.map(c => ({
       code:              c.code,
@@ -1242,7 +1276,7 @@ function saveConfig() {
       placedChassis:     (c.placedChassis || []).map(ch => ({ code: ch.code, slotIdx: ch.slotIdx, heightU: ch.heightU })),
     })),
   };
-  _downloadJSON(data, `${Cabinet.projectName.replace(/\s+/g,'-')}_config.json`);
+  _downloadJSON(data, `${Cabinet.projectName.replace(/\s+/g,'-')}.json`);
   showToast('Configuration saved', 'success');
 }
 
@@ -1268,6 +1302,13 @@ async function _applyConfig(data) {
   await CabinetBuilder.rebuildAllCabinetsFromState();
   if (window.CabinetArrow) CabinetArrow.rebuildAll?.();
   if (window.CabinetFloor) CabinetFloor.update?.();
+
+  // Restore door angle and opacity
+  const anEl = document.getElementById('doorAngle');
+  const opEl = document.getElementById('doorOpacity');
+  if (anEl) { anEl.value = data.doorAngle ?? 0; applyDoorAngle(anEl.value); }
+  if (opEl) { opEl.value = data.doorOpacity ?? 100; applyDoorOpacity(opEl.value); }
+  _updateDoorControls();
 
   // Position next new cabinet after the rightmost existing one in row 0
   Cabinet.currentCabinetXOffset = _confirmedRightEdge();
@@ -1355,6 +1396,7 @@ const _PreviewScene = (() => {
   let _cableGroup    = null;
   let _cableAnimState = [];   // [{ mesh, total, current, speed, active, done }]
   let _cableAnimMode  = 'sequential';
+  let _lineMaterials  = [];   // LineMaterial instances — need resolution updated on resize
   const _cache = {};
 
   function _loadGLB(path) {
@@ -1385,7 +1427,7 @@ const _PreviewScene = (() => {
       const s = _cableAnimState[i];
       if (s.done || !s.active) continue;
       s.current = Math.min(s.current + s.speed, s.total);
-      s.mesh.geometry.setDrawRange(0, Math.floor(s.current));
+      s.mesh.geometry.instanceCount = Math.floor(s.current);
       if (s.current >= s.total) {
         s.done = true;
         if (_cableAnimMode === 'sequential' && i + 1 < _cableAnimState.length) {
@@ -1424,6 +1466,7 @@ const _PreviewScene = (() => {
         _renderer.setSize(W, H, false);
         _camera.aspect = W / H;
         _camera.updateProjectionMatrix();
+        _lineMaterials.forEach(m => m.resolution.set(W, H));
       }
     }
     _updateCam();
@@ -1557,9 +1600,9 @@ const _PreviewScene = (() => {
     return sprite;
   }
 
-  function buildCables(cables, anim = {}) {
+  function buildCables(cables, anim = {}, waypoints = []) {
     if (!_cableGroup) return;
-    // Dispose existing cable meshes, sphere geometries and label textures
+    // Dispose existing cable objects and clear material list
     while (_cableGroup.children.length) {
       const m = _cableGroup.children[0];
       _cableGroup.remove(m);
@@ -1570,51 +1613,114 @@ const _PreviewScene = (() => {
       }
     }
     _cableAnimState = [];
+    _lineMaterials  = [];
     _cableAnimMode  = anim.mode || 'sequential';
 
     const animated = anim.enabled !== false;
-    const duration = anim.duration || 0.6; // seconds per cable (sequential) / total (parallel)
+    const duration = anim.duration || 0.6;
     const MM = 0.001;
+    const W  = _canvas ? _canvas.clientWidth  : 800;
+    const H  = _canvas ? _canvas.clientHeight : 600;
+
+    // Build per-group wpMap — supports both new waypointGroups[] and legacy flat waypoints[]
+    const wpGroupMap  = {};   // groupId → { wpId: wp }
+    const allWaypoints = [];  // flattened, for edit-mode markers
+    const waypointGroups = waypoints; // parameter renamed for clarity
+    if (waypointGroups.length > 0) {
+      if (waypointGroups[0].waypoints !== undefined) {
+        // New format: [{id, waypoints:[...]}, ...]
+        waypointGroups.forEach(g => {
+          const m = {};
+          (g.waypoints || []).forEach(wp => { m[wp.id] = wp; });
+          wpGroupMap[g.id] = m;
+          allWaypoints.push(...(g.waypoints || []));
+        });
+      } else {
+        // Legacy flat format: [{id, x, y, z}, ...]
+        const m = {};
+        waypointGroups.forEach(wp => { m[wp.id] = wp; });
+        wpGroupMap['default'] = m;
+        allWaypoints.push(...waypointGroups);
+      }
+    }
 
     cables.forEach((cable, ci) => {
-      if (!cable.points || cable.points.length < 2) return;
-      const pts   = cable.points.map(p => new THREE.Vector3(p.x * MM, p.y * MM, p.z * MM));
-      const curve = new THREE.CatmullRomCurve3(pts);
-      const geom  = new THREE.TubeGeometry(
-        curve,
-        cable.tubularSegments || 48,
-        (cable.radius || 4) * MM,
-        cable.radialSegments  || 6,
-        false
-      );
-      const mat  = new THREE.MeshStandardMaterial({ color: cable.color || '#222222' });
-      const mesh = new THREE.Mesh(geom, mat);
-      _cableGroup.add(mesh);
+      const groupId = cable.group || 'default';
+      const wpMap   = wpGroupMap[groupId] || wpGroupMap[Object.keys(wpGroupMap)[0]] || {};
+      // Resolve points: new path-based or legacy points array
+      let rawPts;
+      if (cable.path && cable.path.length >= 2) {
+        rawPts = cable.path.map(id => wpMap[id]).filter(Boolean);
+      } else if (cable.points && cable.points.length >= 2) {
+        rawPts = cable.points;
+      } else {
+        return;
+      }
+      if (rawPts.length < 2) return;
 
-      const total = geom.index ? geom.index.count : 0;
+      const pts      = rawPts.map(p => new THREE.Vector3(p.x * MM, p.y * MM, p.z * MM));
+      const curve    = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', cable.tension ?? 0.5);
+      const segments = cable.tubularSegments || 48;
+      const sampled  = curve.getPoints(segments);   // segments+1 points
+      const flat     = [];
+      sampled.forEach(p => flat.push(p.x, p.y, p.z));
+
+      const resolvedColor = (cable.type && window.CableTypes && window.CableTypes[cable.type])
+        ? window.CableTypes[cable.type].color
+        : (cable.color || '#222222');
+      const lineWidth = Math.max(1.5, (cable.radius || 4) * 0.4);
+
+      const geom = new THREE.LineGeometry();
+      geom.setPositions(flat);
+      const mat = new THREE.LineMaterial({
+        color:      resolvedColor,
+        linewidth:  lineWidth,
+        resolution: new THREE.Vector2(W, H),
+      });
+      _lineMaterials.push(mat);
+      const line = new THREE.Line2(geom, mat);
+      line.computeLineDistances();
+      _cableGroup.add(line);
+
+      const total = segments;   // number of segments = instanceCount to reveal
       const speed = total / (duration * 60);
-      if (animated && total > 0) geom.setDrawRange(0, 0);
-      _cableAnimState.push({ mesh, total, current: animated ? 0 : total, speed,
+      if (animated) geom.instanceCount = 0;
+      _cableAnimState.push({ mesh: line, total, current: animated ? 0 : total, speed,
                              active: false, done: !animated });
+    });
 
-      // Red spheres + labels at each control point (only in edit mode)
-      if (window.PreviewPointsEditVisible !== false) {
-        const sr          = (cable.radius || 4) * 1.6 * MM;
-        const labelSize   = sr * 5;
-        const labelOffset = sr * 2.5;
-        pts.forEach((pt, pi) => {
-          const sg = new THREE.SphereGeometry(sr, 8, 6);
+    // Edit mode: waypoint spheres + labels
+    if (window.PreviewPointsEditVisible !== false) {
+      const SR = 6 * MM;
+      if (allWaypoints.length > 0) {
+        allWaypoints.forEach(wp => {
+          const pt = new THREE.Vector3(wp.x * MM, wp.y * MM, wp.z * MM);
+          const sg = new THREE.SphereGeometry(SR, 8, 6);
           const sm = new THREE.Mesh(sg, _sphereMat);
-          sm.position.copy(pt);
-          sm.renderOrder = 1;
+          sm.position.copy(pt); sm.renderOrder = 1;
           _cableGroup.add(sm);
-
-          const sprite = _makeLabelSprite(`${ci}-${pi}`, labelSize);
-          sprite.position.set(pt.x + labelOffset, pt.y + labelOffset, pt.z);
+          const sprite = _makeLabelSprite(String(wp.id), SR * 5);
+          sprite.position.set(pt.x + SR * 2.5, pt.y + SR * 2.5, pt.z);
           _cableGroup.add(sprite);
         });
+      } else {
+        // Legacy: per-cable-point markers
+        cables.forEach((cable, ci) => {
+          if (!cable.points) return;
+          const sr = (cable.radius || 4) * 1.6 * MM;
+          cable.points.forEach((p, pi) => {
+            const pt = new THREE.Vector3(p.x * MM, p.y * MM, p.z * MM);
+            const sg = new THREE.SphereGeometry(sr, 8, 6);
+            const sm = new THREE.Mesh(sg, _sphereMat);
+            sm.position.copy(pt); sm.renderOrder = 1;
+            _cableGroup.add(sm);
+            const sprite = _makeLabelSprite(`${ci+1}-${pi+1}`, sr * 5);
+            sprite.position.set(pt.x + sr*2.5, pt.y + sr*2.5, pt.z);
+            _cableGroup.add(sprite);
+          });
+        });
       }
-    });
+    }
 
     // Activate first cable(s)
     if (animated && _cableAnimState.length > 0) {
@@ -1631,7 +1737,7 @@ const _PreviewScene = (() => {
       s.current = 0;
       s.done    = false;
       s.active  = _cableAnimMode !== 'sequential' || i === 0;
-      s.mesh.geometry.setDrawRange(0, 0);
+      s.mesh.geometry.instanceCount = 0;
     });
   }
 
@@ -1657,24 +1763,32 @@ const _PreviewScene = (() => {
     };
   }
 
-  return { start, stop, loadAccessory, loadPreset, buildCables, replayAnimation, applyCamera, getCamera };
+  return { start, stop, loadAccessory, loadPreset, buildCables, replayAnimation, applyCamera, getCamera, _makeLabelSprite };
 })();
 
 /* ══════════════════════════════════════════════════════
    CABLES EDITOR — live editing of cable paths in preview
 ════════════════════════════════════════════════════════ */
 const _CablesEditor = (() => {
-  let _code    = null;
-  let _config  = null;   // working deep-copy of PreviewCablesConfig[code]
+  let _code       = null;
+  let _config     = null;   // working deep-copy of PreviewCablesConfig[code]
+  let _provider   = null;   // scene provider: must have buildCables/replayAnimation/getCamera
+  let _editorElId = 'cablesEditor';
+
+  function setProvider(p, elId) {
+    _provider   = p;
+    _editorElId = elId || 'cablesEditor';
+  }
 
   function open(code) {
     _code = code;
     const src = window.PreviewCablesConfig && window.PreviewCablesConfig[code];
     if (!src) { _hide(); return; }
     _config = JSON.parse(JSON.stringify(src));
+    _migrate();  // convert legacy cable.points → waypoints + path
     _render();
     if (window.PreviewPointsEditVisible !== false)
-      document.getElementById('cablesEditor').style.display = 'block';
+      document.getElementById(_editorElId).style.display = 'block';
     _apply();
   }
 
@@ -1684,100 +1798,274 @@ const _CablesEditor = (() => {
   }
 
   function _hide() {
-    const el = document.getElementById('cablesEditor');
+    const el = document.getElementById(_editorElId);
     if (el) el.style.display = 'none';
   }
 
   function _apply() {
-    if (_config) _PreviewScene.buildCables(_config.cables, _config.animation || {});
+    if (_config && _provider)
+      _provider.buildCables(_config.cables, _config.animation || {}, _config.waypointGroups || []);
   }
 
+  // ── Migrate legacy formats ──────────────────────────
+  function _migrate() {
+    // 1. flat waypoints[] → waypointGroups
+    if (_config.waypoints && !_config.waypointGroups) {
+      _config.waypointGroups = [{ id: 'default', waypoints: _config.waypoints }];
+      delete _config.waypoints;
+    }
+    if (!_config.waypointGroups) _config.waypointGroups = [{ id: 'default', waypoints: [] }];
+    _config.waypointGroups.forEach(g => { if (!g.waypoints) g.waypoints = []; });
+
+    const defaultId = _config.waypointGroups[0].id;
+
+    // 2. per-cable: ensure group, migrate legacy cable.points
+    _config.cables.forEach(cable => {
+      if (!cable.group) cable.group = defaultId;
+      if (cable.points && !cable.path) {
+        const group = _config.waypointGroups.find(g => g.id === cable.group)
+                   || _config.waypointGroups[0];
+        const existing = new Map();
+        group.waypoints.forEach(wp => existing.set(`${wp.x},${wp.y},${wp.z}`, wp.id));
+        let nextId = group.waypoints.length > 0
+          ? Math.max(...group.waypoints.map(w => w.id)) + 1 : 1;
+        cable.path = cable.points.map(p => {
+          const key = `${p.x},${p.y},${p.z}`;
+          if (!existing.has(key)) {
+            existing.set(key, nextId);
+            group.waypoints.push({ id: nextId, x: p.x, y: p.y, z: p.z });
+            nextId++;
+          }
+          return existing.get(key);
+        });
+        delete cable.points;
+      }
+    });
+  }
+
+  // ── Render ─────────────────────────────────────────
   function _render() {
-    const el = document.getElementById('cablesEditor');
+    const el = document.getElementById(_editorElId);
     if (!el || !_config) return;
+    const groups = _config.waypointGroups || [];
+
     el.innerHTML =
+      // ── Waypoint Groups section ──
       `<div class="ce-header">
-        <span>Cables <span style="font-weight:400;font-size:10px;color:#aaa">(mm)</span></span>
-        <button class="ce-btn" onclick="_CablesEditor.addCable()">+ Add</button>
-      </div>` +
-      _config.cables.map((cable, ci) =>
-        `<div class="ce-cable">
-          <div class="ce-cable-head">
-            <span>Cable ${ci + 1}</span>
-            <input type="color" value="${cable.color}"
-              onchange="_CablesEditor.setCableColor(${ci}, this.value)" title="Color">
-            <label style="font-size:11px">r mm<input type="number" value="${cable.radius}" step="0.5" min="0.5" style="width:48px;margin-left:3px"
-              onchange="_CablesEditor.setCableRadius(${ci}, +this.value)"></label>
-            <button class="ce-btn ce-btn-del" onclick="_CablesEditor.removeCable(${ci})">✕</button>
+        <span>Waypoints <span class="ce-unit">(mm)</span></span>
+        <button class="ce-btn" onclick="_CablesEditor.addGroup()">+ Group</button>
+      </div>
+      ${groups.map((g, gi) => `
+        <div class="ce-group">
+          <div class="ce-group-head">
+            <input class="ce-group-name" value="${g.id}"
+              onchange="_CablesEditor.renameGroup(${gi}, this.value)">
+            <button class="ce-btn ce-btn-del" title="Remove group"
+              onclick="_CablesEditor.removeGroup(${gi})">×</button>
           </div>
           <table class="ce-table">
-            <tr><th>#</th><th>X</th><th>Y</th><th>Z</th><th></th></tr>
-            ${cable.points.map((pt, pi) =>
-              `<tr>
-                <td style="color:#aaa;font-size:10px">${pi + 1}</td>
-                <td><input type="number" value="${+pt.x.toFixed(2)}" step="1"
-                  onchange="_CablesEditor.setPoint(${ci},${pi},'x',+this.value)"></td>
-                <td><input type="number" value="${+pt.y.toFixed(2)}" step="1"
-                  onchange="_CablesEditor.setPoint(${ci},${pi},'y',+this.value)"></td>
-                <td><input type="number" value="${+pt.z.toFixed(2)}" step="1"
-                  onchange="_CablesEditor.setPoint(${ci},${pi},'z',+this.value)"></td>
-                <td><button class="ce-btn ce-btn-del" onclick="_CablesEditor.removePoint(${ci},${pi})">−</button></td>
+            <tr><th>ID</th><th>X</th><th>Y</th><th>Z</th><th></th></tr>
+            ${g.waypoints.map((wp, wi) => `
+              <tr>
+                <td class="ce-wp-id">${wp.id}</td>
+                <td><input type="number" value="${+wp.x.toFixed(1)}" step="1"
+                  onchange="_CablesEditor.setWaypoint(${gi},${wi},'x',+this.value)"></td>
+                <td><input type="number" value="${+wp.y.toFixed(1)}" step="1"
+                  onchange="_CablesEditor.setWaypoint(${gi},${wi},'y',+this.value)"></td>
+                <td><input type="number" value="${+wp.z.toFixed(1)}" step="1"
+                  onchange="_CablesEditor.setWaypoint(${gi},${wi},'z',+this.value)"></td>
+                <td><button class="ce-btn ce-btn-del"
+                  onclick="_CablesEditor.removeWaypoint(${gi},${wi})">−</button></td>
               </tr>`
             ).join('')}
           </table>
-          <button class="ce-btn" onclick="_CablesEditor.addPoint(${ci})">+ Point</button>
+          <button class="ce-btn ce-btn-add-pt"
+            onclick="_CablesEditor.addWaypoint(${gi})">+ Point</button>
         </div>`
-      ).join('') +
-      `<hr class="ce-divider">
+      ).join('')}
+      <hr class="ce-divider">` +
+      // ── Cables section ──
+      `<div class="ce-header">
+        <span>Cables</span>
+        <button class="ce-btn" onclick="_CablesEditor.addCable()">+ Add</button>
+      </div>
+      ${_config.cables.map((cable, ci) => {
+        const cg  = groups.find(g => g.id === cable.group) || groups[0];
+        const wps = cg ? cg.waypoints : [];
+        return `
+        <div class="ce-cable">
+          <div class="ce-cable-head">
+            <span>Cable ${ci + 1}</span>
+            <select class="ce-type-select" title="Cable type"
+              onchange="_CablesEditor.setCableType(${ci}, this.value)">${
+              Object.keys(window.CableTypes || {}).map(k =>
+                `<option value="${k}"${(cable.type || 'optipack') === k ? ' selected' : ''}>${window.CableTypes[k].label}</option>`
+              ).join('')
+            }</select>
+            <label class="ce-num-label">r<input type="number" value="${cable.radius || 4}" step="0.5" min="0.5"
+              onchange="_CablesEditor.setCableRadius(${ci}, +this.value)"></label>
+            <label class="ce-num-label">t<input type="number" value="${cable.tension ?? 0.5}" step="0.05" min="0" max="1"
+              title="Tension (0=loose, 1=sharp)"
+              onchange="_CablesEditor.setCableTension(${ci}, +this.value)"></label>
+            <select class="ce-group-select" title="Waypoint group"
+              onchange="_CablesEditor.setCableGroup(${ci}, this.value)">${
+              groups.map(g =>
+                `<option value="${g.id}"${cable.group === g.id ? ' selected' : ''}>${g.id}</option>`
+              ).join('')
+            }</select>
+            <button class="ce-btn ce-btn-del" onclick="_CablesEditor.removeCable(${ci})">✕</button>
+          </div>
+          <div class="ce-path-row">
+            ${(cable.path || []).map((id, pi) =>
+              `<span class="ce-wp-tag">${id}<button onclick="_CablesEditor.removeFromPath(${ci},${pi})">×</button></span>`
+            ).join('<span class="ce-path-arrow">→</span>')}
+            <select class="ce-path-add" onchange="_CablesEditor.addToPath(${ci},+this.value);this.selectedIndex=0">
+              <option value="">＋</option>
+              ${wps.map(wp => `<option value="${wp.id}">${wp.id}</option>`).join('')}
+            </select>
+          </div>
+        </div>`;
+      }).join('')}
+      <hr class="ce-divider">
       <button class="ce-btn" style="width:100%;margin-bottom:4px" onclick="_CablesEditor.replay()">▶ Replay animation</button>
       <button class="ce-btn ce-btn-export" onclick="_CablesEditor.exportConfig()">⬇ Copy config</button>`;
   }
 
-  // ── Structural mutations (need full re-render) ──────
+  // ── Group mutations ─────────────────────────────────
+  function addGroup() {
+    const ids = _config.waypointGroups.map(g => g.id);
+    let name = 'group', n = 2;
+    while (ids.includes(name)) { name = 'group' + n++; }
+    _config.waypointGroups.push({ id: name, waypoints: [] });
+    _render();
+  }
+  function removeGroup(gi) {
+    if (_config.waypointGroups.length <= 1) return;
+    const oldId   = _config.waypointGroups[gi].id;
+    _config.waypointGroups.splice(gi, 1);
+    const fallback = _config.waypointGroups[0].id;
+    _config.cables.forEach(c => { if (c.group === oldId) { c.group = fallback; c.path = []; } });
+    _render(); _apply();
+  }
+  function renameGroup(gi, newId) {
+    newId = newId.trim();
+    if (!newId) return;
+    const oldId = _config.waypointGroups[gi].id;
+    _config.waypointGroups[gi].id = newId;
+    _config.cables.forEach(c => { if (c.group === oldId) c.group = newId; });
+    _apply();
+  }
+
+  // ── Waypoint mutations ──────────────────────────────
+  function addWaypoint(gi) {
+    const wps  = _config.waypointGroups[gi].waypoints;
+    const last  = wps[wps.length - 1];
+    const nextId = wps.length > 0 ? Math.max(...wps.map(w => w.id)) + 1 : 1;
+    wps.push({ id: nextId, x: last ? last.x : 0, y: last ? last.y + 100 : 0, z: last ? last.z : 0 });
+    _render(); _apply();
+  }
+  function removeWaypoint(gi, wi) {
+    const id      = _config.waypointGroups[gi].waypoints[wi].id;
+    const groupId = _config.waypointGroups[gi].id;
+    _config.waypointGroups[gi].waypoints.splice(wi, 1);
+    _config.cables.forEach(c => {
+      if (c.group === groupId) c.path = (c.path || []).filter(pid => pid !== id);
+    });
+    _render(); _apply();
+  }
+  function setWaypoint(gi, wi, axis, val) {
+    _config.waypointGroups[gi].waypoints[wi][axis] = val; _apply();
+  }
+
+  // ── Cable mutations ─────────────────────────────────
   function addCable() {
-    const prev = _config.cables[_config.cables.length - 1];
-    const base = prev
-      ? JSON.parse(JSON.stringify(prev))
-      : { color: '#333333', radius: 4, tubularSegments: 48, radialSegments: 6,
-          points: [{ x: 0, y: 50, z: 0 }, { x: 0, y: -50, z: 0 }] };
-    _config.cables.push(base);
+    const g    = _config.waypointGroups[0] || { id: 'default', waypoints: [] };
+    const wps  = g.waypoints;
+    const path = wps.length >= 2 ? [wps[0].id, wps[1].id] : wps.length === 1 ? [wps[0].id] : [];
+    _config.cables.push({ type: 'optipack', radius: 10, group: g.id, path });
     _render(); _apply();
   }
   function removeCable(ci) { _config.cables.splice(ci, 1); _render(); _apply(); }
-  function addPoint(ci) {
-    const pts = _config.cables[ci].points;
-    const last = pts[pts.length - 1] || { x: 0, y: 0, z: 0 };
-    pts.push({ x: last.x + 20, y: last.y, z: last.z });
+
+  function addToPath(ci, id) {
+    if (!id) return;
+    (_config.cables[ci].path = _config.cables[ci].path || []).push(id);
     _render(); _apply();
   }
-  function removePoint(ci, pi) { _config.cables[ci].points.splice(pi, 1); _render(); _apply(); }
-
-  // ── Value mutations (no re-render needed) ──────────
-  function setCableColor(ci, val)       { _config.cables[ci].color  = val; _apply(); }
-  function setCableRadius(ci, val)      { _config.cables[ci].radius = val; _apply(); }
-  function setPoint(ci, pi, axis, val)  { _config.cables[ci].points[pi][axis] = val; _apply(); }
-
-  // ── Export ─────────────────────────────────────────
-  function exportConfig() {
-    const exported = {
-      camera:    _PreviewScene.getCamera(),
-      animation: _config.animation || { enabled: true, mode: 'sequential', duration: 0.6 },
-      cables:    _config.cables,
-    };
-    const out = JSON.stringify(exported, null, 2);
-    const block = `  '${_code}': ${out},`;
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(block).then(() => showToast('Config copied to clipboard', 'info'));
-    }
+  function removeFromPath(ci, pi) {
+    _config.cables[ci].path.splice(pi, 1);
+    _render(); _apply();
   }
 
-  function replay() { _PreviewScene.replayAnimation(); }
+  // ── Value mutations (no re-render) ──────────────────
+  function setCableType(ci, type) {
+    _config.cables[ci].type = type;
+    if (window.CableTypes && window.CableTypes[type])
+      _config.cables[ci].color = window.CableTypes[type].color;
+    _apply();
+  }
+  function setCableRadius(ci, val)   { _config.cables[ci].radius  = val; _apply(); }
+  function setCableTension(ci, val)  { _config.cables[ci].tension = val; _apply(); }
+  function setCableGroup(ci, groupId) {
+    _config.cables[ci].group = groupId;
+    _config.cables[ci].path  = [];
+    _render(); _apply();
+  }
 
-  return { open, close, addCable, removeCable, addPoint, removePoint,
-           setCableColor, setCableRadius, setPoint, exportConfig, replay };
+  // ── Export ──────────────────────────────────────────
+  function _formatCompact(code, cam, anim, waypointGroups, cables) {
+    const lines = [`  '${code}': {`];
+    if (cam) {
+      const t = cam.target;
+      lines.push(`    camera:    { theta: ${cam.theta}, phi: ${cam.phi}, radius: ${cam.radius}, target: { x: ${t.x}, y: ${t.y}, z: ${t.z} } },`);
+    }
+    lines.push(`    animation: { enabled: ${anim.enabled}, mode: '${anim.mode}', duration: ${anim.duration} },`);
+    lines.push(`    waypointGroups: [`);
+    waypointGroups.forEach(g => {
+      lines.push(`      { id: '${g.id}', waypoints: [`);
+      (g.waypoints || []).forEach(wp => {
+        lines.push(`        { id: ${wp.id}, x: ${wp.x}, y: ${wp.y}, z: ${wp.z} },`);
+      });
+      lines.push(`      ] },`);
+    });
+    lines.push(`    ],`);
+    lines.push(`    cables: [`);
+    cables.forEach(cable => {
+      const typeStr    = cable.type ? `type: '${cable.type}'` : `color: '${cable.color || '#888888'}'`;
+      const groupStr   = cable.group && cable.group !== 'default' ? `, group: '${cable.group}'` : '';
+      const tensionStr = cable.tension !== undefined && cable.tension !== 0.5 ? `, tension: ${cable.tension}` : '';
+      const path       = `[${(cable.path || []).join(', ')}]`;
+      lines.push(`      { ${typeStr}, radius: ${cable.radius || 4}${tensionStr}${groupStr}, path: ${path} },`);
+    });
+    lines.push(`    ],`);
+    lines.push(`  },`);
+    return lines.join('\n');
+  }
+
+  function exportConfig() {
+    const cam  = _provider ? _provider.getCamera() : null;
+    const anim = _config.animation || { enabled: true, mode: 'sequential', duration: 0.6 };
+    const cables = _config.cables.map(c => { const o = Object.assign({}, c); if (o.type) delete o.color; return o; });
+    const block = _formatCompact(_code, cam, anim, _config.waypointGroups || [], cables);
+    if (navigator.clipboard)
+      navigator.clipboard.writeText(block).then(() => showToast('Config copied to clipboard', 'info'));
+  }
+
+  function replay() { if (_provider) _provider.replayAnimation(); }
+
+  return { open, close, setProvider,
+           addGroup, removeGroup, renameGroup,
+           addWaypoint, removeWaypoint, setWaypoint,
+           addCable, removeCable, addToPath, removeFromPath,
+           setCableType, setCableRadius, setCableTension, setCableGroup,
+           exportConfig, replay };
 })();
 
-window._CablesEditor = _CablesEditor;
+window._CablesEditor      = _CablesEditor;
+window._PreviewScene      = _PreviewScene;
+window._makeLabelSprite   = _PreviewScene._makeLabelSprite;
+// Default provider is _PreviewScene (set after both are defined)
+_CablesEditor.setProvider(_PreviewScene, 'cablesEditor');
 
 function openPreview(type, code) {
   const modal  = document.getElementById('previewModal');
@@ -2182,6 +2470,60 @@ async function _capturePresetThumb(code, cam = {}) {
   return dataURL;
 }
 
+/**
+ * Loads a full saved configuration and captures a thumbnail of the entire scene.
+ * Used by exportAllThumbs() for ready-configuration gallery images.
+ */
+async function _captureConfigThumb(configFile, cam = {}) {
+  const rdr    = Cabinet.renderer;
+  const scene  = Cabinet.scene;
+  const camera = Cabinet.camera;
+  if (!rdr || !scene || !camera) throw new Error('Scene not ready');
+
+  const theta      = cam.theta            ?? 0.291;
+  const phi        = cam.phi              ?? 1.409;
+  const radiusMult = cam.presetRadiusMult ?? 0.75;
+
+  // Load the configuration (suppress toasts)
+  const origToast  = window.showToast;
+  window.showToast = () => {};
+  try {
+    await loadExample(configFile);
+  } finally {
+    window.showToast = origToast;
+  }
+
+  // Apply thumbnail camera angle, keeping the radius that _applyConfig set
+  const currentRadius = CabinetControls.getRadius();
+  CabinetControls.setView(theta, phi, currentRadius * radiusMult);
+  CabinetControls.update();
+
+  // Render at thumbnail resolution
+  const W = 1020, H = 720;
+  const prevAspect = camera.aspect;
+  const cssW = rdr.domElement.clientWidth  || 800;
+  const cssH = rdr.domElement.clientHeight || 600;
+
+  camera.aspect = W / H;
+  camera.updateProjectionMatrix();
+  rdr.setSize(W, H, false);
+  CabinetFloor.setVisible(false);
+  if (window.CabinetArrow) CabinetArrow.setVisible(false);
+  CabinetBuilder.setHighlightsVisible(false);
+  rdr.render(scene, camera);
+  CabinetFloor.setVisible(true);
+  if (window.CabinetArrow) CabinetArrow.setVisible(true);
+  CabinetBuilder.setHighlightsVisible(true);
+  const dataURL = rdr.domElement.toDataURL('image/jpeg', 0.92);
+
+  // Restore renderer size
+  rdr.setSize(cssW, cssH, false);
+  camera.aspect = prevAspect;
+  camera.updateProjectionMatrix();
+
+  return dataURL;
+}
+
 function renderSnapshot() {
   const rdr = Cabinet.renderer;
   if (!rdr) { showToast('Nothing to render', 'error'); return; }
@@ -2351,14 +2693,20 @@ function _updateDoorControls() {
   const panel = document.getElementById('doorControls');
   if (!panel) return;
   panel.style.display = hasDoors ? 'flex' : 'none';
-  if (!hasDoors) {
-    const opEl = document.getElementById('doorOpacity');
-    const anEl = document.getElementById('doorAngle');
-    if (opEl) opEl.value = 100;
-    if (anEl) anEl.value = 0;
-    document.getElementById('doorOpacityVal').textContent = '100%';
-    document.getElementById('doorAngleVal').textContent   = '0°';
-  }
+  // Do NOT reset slider values here — values are preserved across cabinet rebuilds.
+  // Only reset when the full scene is cleared (_resetDoorControls).
+}
+
+function _resetDoorControls() {
+  const opEl = document.getElementById('doorOpacity');
+  const anEl = document.getElementById('doorAngle');
+  if (opEl) opEl.value = 100;
+  if (anEl) anEl.value = 0;
+  const opVal = document.getElementById('doorOpacityVal');
+  const anVal = document.getElementById('doorAngleVal');
+  if (opVal) opVal.textContent = '100%';
+  if (anVal) anVal.textContent = '0°';
+  _updateDoorControls();
 }
 
 function applyDoorOpacity(value) {
@@ -2809,6 +3157,20 @@ window.exportAllThumbs = async function (cam = {}) {
         results.push({ type: 'chassis', code: c.code, dataURL });
       } catch (e) {
         console.warn(`  FAILED chassis: ${c.code}`, e.message);
+      }
+    }
+  }
+
+  // ── Ready-configuration thumbnails ─────────────────
+  console.log('[exportAllThumbs] Configurations…');
+  if (window.CONFIGURATIONS_CATALOG && CONFIGURATIONS_CATALOG.length) {
+    for (const cfg of CONFIGURATIONS_CATALOG) {
+      try {
+        console.log(`  config: ${cfg.id}`);
+        const dataURL = await _captureConfigThumb(cfg.file, cam);
+        results.push({ type: 'config', code: cfg.id, imageFile: cfg.image, dataURL });
+      } catch (e) {
+        console.warn(`  FAILED config: ${cfg.id}`, e.message);
       }
     }
   }

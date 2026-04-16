@@ -96,6 +96,10 @@ window.CabinetFloor = (function () {
     if (_originSphere) _originSphere.visible = v;
   }
 
+  function setOriginSphereVisible(v) {
+    if (_originSphere) _originSphere.visible = v;
+  }
+
   /* ── Bounds calculation ───────────────────────────────────────────────── */
   /**
    * Calculate bounding box of all cabinets across all rows.
@@ -263,6 +267,7 @@ window.CabinetFloor = (function () {
     init,
     update,
     setVisible,
+    setOriginSphereVisible,
   };
 })();
 

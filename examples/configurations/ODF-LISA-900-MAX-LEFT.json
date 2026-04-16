@@ -1,0 +1,78 @@
+{
+  "projectName": "ODF LISA 900 MAX LEFT",
+  "savedAt": "2026-04-15T14:44:05.680Z",
+  "camera": {
+    "theta": 0.4483185307179587,
+    "phi": 1.234473815219112,
+    "radius": 5.24,
+    "target": {
+      "x": 0.45,
+      "y": 1.092,
+      "z": 0.152
+    }
+  },
+  "doorAngle": 87,
+  "doorOpacity": 100,
+  "rows": [
+    {
+      "id": 0,
+      "origin": {
+        "x": 0,
+        "z": 0
+      },
+      "angle": 0,
+      "flipped": false
+    }
+  ],
+  "cabinets": [
+    {
+      "code": "EZR_CL-46U-09STL-DB02B1S11T1-A-BK",
+      "xOffset": 0,
+      "rowIdx": 0,
+      "label": "ODF #1",
+      "placedAccessories": [],
+      "placedChassis": [
+        {
+          "code": "Chassis-LISA-7U-L",
+          "slotIdx": 0,
+          "heightU": 7
+        },
+        {
+          "code": "Chassis-LISA-7U-L",
+          "slotIdx": 7,
+          "heightU": 7
+        },
+        {
+          "code": "Chassis-LISA-7U-L",
+          "slotIdx": 14,
+          "heightU": 7
+        },
+        {
+          "code": "Chassis-LISA-7U-L",
+          "slotIdx": 21,
+          "heightU": 7
+        },
+        {
+          "code": "Chassis-LISA-7U-L",
+          "slotIdx": 28,
+          "heightU": 7
+        },
+        {
+          "code": "Chassis-LISA-7U-L",
+          "slotIdx": 35,
+          "heightU": 7
+        },
+        {
+          "code": "Chassis-LISA-2U-L",
+          "slotIdx": 42,
+          "heightU": 2
+        },
+        {
+          "code": "Chassis-LISA-2U-L",
+          "slotIdx": 44,
+          "heightU": 2
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,579 @@
+/* ============================================================
+   WELCOME SCREEN
+   ============================================================ */
+
+#welcomeScreen {
+  position: fixed;
+  inset: 0;
+  background-image: url('../../images/intro.jpeg');
+  background-size: cover;
+  background-position: center;
+  background-color: #1a2835;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  transition: opacity 0.5s ease-out;
+}
+
+#welcomeScreen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(12, 22, 32, 0.68);
+  z-index: 0;
+}
+
+#welcomeScreen.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── Loading phase ──────────────────────────────── */
+
+#welcomeLoading {
+  text-align: center;
+  color: #fff;
+  position: relative;
+  z-index: 1;
+  transition: opacity 0.3s ease;
+}
+
+#welcomeLoading.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.welcome-logo-text {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+
+.welcome-logo-sub {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 40px;
+}
+
+.welcome-progress {
+  width: 300px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 0 auto 14px;
+}
+
+.welcome-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #4aa8d8, #7ecfef);
+  width: 0%;
+  transition: width 0.35s ease;
+  border-radius: 2px;
+}
+
+.welcome-status {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.42);
+  margin-bottom: 22px;
+  letter-spacing: 0.03em;
+}
+
+.welcome-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(255, 255, 255, 0.12);
+  border-top-color: #4aa8d8;
+  border-radius: 50%;
+  animation: welcome-spin 0.9s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes welcome-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Cards phase ────────────────────────────────── */
+
+#welcomeCards {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+#welcomeCards.visible {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.welcome-intro-content {
+  text-align: center;
+  color: #fff;
+}
+
+.welcome-intro-logo {
+  font-size: 2.2rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.welcome-intro-subtitle {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 44px;
+}
+
+.welcome-intro-cards {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+}
+
+.welcome-card {
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 12px;
+  padding: 34px 28px 28px;
+  width: 230px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, transform 0.15s;
+  backdrop-filter: blur(8px);
+  text-align: center;
+  user-select: none;
+}
+
+.welcome-card:hover {
+  background: rgba(255, 255, 255, 0.13);
+  border-color: rgba(74, 168, 216, 0.6);
+  transform: translateY(-4px);
+}
+
+.welcome-card-level {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.35);
+  margin-bottom: 14px;
+}
+
+.welcome-card-icon {
+  font-size: 2.2rem;
+  margin-bottom: 14px;
+}
+
+.welcome-card-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 10px;
+}
+
+.welcome-card-desc {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.55);
+  line-height: 1.55;
+}
+
+.welcome-card-badge {
+  display: inline-block;
+  margin-top: 18px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #4aa8d8;
+  background: rgba(74, 168, 216, 0.12);
+  border: 1px solid rgba(74, 168, 216, 0.28);
+  border-radius: 20px;
+  padding: 3px 12px;
+}
+
+
+/* ============================================================
+   CONFIG GALLERY OVERLAY
+   ============================================================ */
+
+#configGalleryOverlay {
+  position: fixed;
+  inset: 0;
+  background: #0f1820;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+
+#configGalleryOverlay.visible {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.config-gallery-header {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 22px 36px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  flex-shrink: 0;
+}
+
+.config-gallery-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.config-gallery-back {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.85rem;
+  padding: 5px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  margin-right: 14px;
+  flex-shrink: 0;
+}
+
+.config-gallery-back:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.config-gallery-hint {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.config-gallery-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 36px;
+}
+
+.config-gallery-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 900px;
+}
+
+/* ── Single configuration card ───────────────────── */
+
+.config-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 10px;
+  display: flex;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  position: relative;
+}
+
+.config-card:hover {
+  border-color: rgba(74, 168, 216, 0.45);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.config-card-img {
+  width: 200px;
+  min-width: 200px;
+  height: 130px;
+  object-fit: cover;
+  background: #1c2b38;
+  flex-shrink: 0;
+  display: block;
+}
+
+.config-card-img-placeholder {
+  width: 200px;
+  min-width: 200px;
+  height: 130px;
+  background: #1c2b38;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.2);
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
+
+.config-card-body {
+  padding: 18px 48px 18px 22px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.config-card-name {
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+.config-card-desc {
+  font-size: 0.83rem;
+  color: rgba(255, 255, 255, 0.52);
+  line-height: 1.55;
+}
+
+.config-card-eye {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  background: rgba(74, 168, 216, 0.12);
+  border: 1px solid rgba(74, 168, 216, 0.35);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s;
+  color: #4aa8d8;
+  padding: 0;
+}
+
+.config-card-eye:hover {
+  background: rgba(74, 168, 216, 0.28);
+}
+
+.config-gallery-empty {
+  color: rgba(255, 255, 255, 0.35);
+  padding: 60px 0;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+
+/* ============================================================
+   CONFIG PREVIEW MODAL
+   Styled as a centered modal (same pattern as #previewModal).
+   ============================================================ */
+
+#configPreviewModal {
+  z-index: 9600;  /* above configGalleryOverlay (9000) */
+}
+
+/* Modal box — wider than accessory preview to fit full cabinet */
+.modal-box-config-preview {
+  width: 80vw;
+  max-width: none;
+  height: 80vh;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 20px 0 20px;
+  overflow: hidden;
+}
+
+/* ── Body ─────────────────────────────────────────── */
+
+.config-preview-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+  margin-top: 12px;
+  margin-bottom: 20px;
+  gap: 0;
+}
+
+/* Left: isolated canvas */
+.config-preview-scene {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #f0f0f0;
+  border-radius: 0 0 0 10px;
+}
+
+#configPreviewCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Loading overlay */
+.config-preview-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 30, 42, 0.82);
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 13px;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.config-preview-loading-spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  border-top-color: #4aa8d8;
+  border-radius: 50%;
+  animation: welcome-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+/* Cables editor panel (between scene and info) */
+#configCablesEditor {
+  border-left: 1px solid #e8e8e8;
+  overflow-y: auto;
+  flex-shrink: 0;
+  max-height: none;
+  border-radius: 0;
+  width: 300px;
+}
+
+/* Right: info panel */
+.config-preview-info {
+  width: 440px;
+  min-width: 440px;
+  padding: 4px 0 20px 16px;
+  border-left: 1px solid #e8e8e8;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.config-preview-info-desc {
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.7;
+  flex: 1;
+}
+
+/* ── Specs table ──────────────────────────────────── */
+
+.specs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.specs-table thead tr {
+  border-bottom: 2px solid #d0d0d0;
+}
+
+.specs-table th {
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #999;
+  padding: 0 8px 6px 0;
+}
+
+.specs-table th:last-child {
+  padding-right: 0;
+}
+
+.specs-table tbody tr {
+  border-bottom: 1px solid #ebebeb;
+}
+
+.specs-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.specs-key {
+  color: #777;
+  font-weight: 500;
+  font-size: 0.78rem;
+  padding: 4px 10px 4px 0;
+  vertical-align: top;
+  white-space: nowrap;
+  border-right: 1px solid #e0e0e0;
+  width: 38%;
+}
+
+.specs-val {
+  color: #222;
+  font-size: 0.78rem;
+  padding: 4px 0 4px 10px;
+  vertical-align: top;
+}
+
+.specs-empty {
+  color: #666;
+  font-size: 0.85rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.config-preview-open-btn {
+  padding: 9px 16px;
+  background: #4aa8d8;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+  width: 100%;
+}
+
+.config-preview-open-btn:hover {
+  background: #3897c7;
+}
+
+
+/* ============================================================
+   CABLE LEGEND  (overlay inside preview canvas containers)
+   ============================================================ */
+
+.cable-legend {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  background: rgba(10, 20, 30, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px 12px;
+  pointer-events: none;
+  z-index: 3;
+  backdrop-filter: blur(4px);
+}
+
+.cable-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.9;
+  white-space: nowrap;
+}
+
+.cable-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}

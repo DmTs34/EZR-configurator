@@ -19,7 +19,7 @@
 
 // Set to false to hide the points editor panel and camera statusbar,
 // showing only the 3D scene in the preview modal.
-window.PreviewPointsEditVisible = true;
+window.PreviewPointsEditVisible = false;
 
 // Standard cable type colours.
 // Use the 'type' field in a cable object instead of a free-form 'color'.

@@ -740,8 +740,12 @@
       var gallery = document.getElementById('configGalleryOverlay');
       if (gallery) { gallery.classList.remove('visible'); gallery.style.display = ''; }
 
-      // Restore arrow visibility before loading into main scene
-      if (window.CabinetArrow) CabinetArrow.setVisible(true);
+      // Restore arrow/label/highlight visibility before loading into main scene
+      if (window.CabinetArrow)   CabinetArrow.setVisible(true);
+      if (window.CabinetBuilder) {
+        CabinetBuilder.setLabelsVisible(true);
+        CabinetBuilder.setHighlightsVisible(true);
+      }
 
       // Builder state is no longer needed — scene will be fully rebuilt
       _savedBuilderState = null;

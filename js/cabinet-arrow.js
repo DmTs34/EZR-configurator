@@ -329,7 +329,7 @@ window.CabinetArrow = (function () {
   function _onCanvasHover(e) {
     if (_dragging) return;
     const arrowIdx = _hitArrowIdx(e.clientX, e.clientY);
-    _canvas.style.cursor = arrowIdx >= 0 ? 'grab' : '';
+    _canvas.style.cursor = arrowIdx >= 0 ? 'pointer' : ''; // grab set on mousedown, grabbing while dragging
   }
 
   function _onCanvasLeave() {
@@ -348,7 +348,7 @@ window.CabinetArrow = (function () {
     _dragStarted  = false;
     _mouseDownX   = e.clientX;
     _mouseDownY   = e.clientY;
-    _canvas.style.cursor = 'grabbing';
+    _canvas.style.cursor = 'grab';
     e.stopPropagation();
     e.preventDefault();
   }
@@ -359,6 +359,7 @@ window.CabinetArrow = (function () {
     const dy = e.clientY - _mouseDownY;
     if (!_dragStarted && Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD) {
       _dragStarted = true;
+      _canvas.style.cursor = 'grabbing';
     }
     if (_dragStarted) {
       const pt = _floorPoint(e.clientX, e.clientY);

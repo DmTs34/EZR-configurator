@@ -1291,6 +1291,8 @@ async function _applyConfig(data) {
   Cabinet.projectName           = data.projectName || 'Imported Project';
   Cabinet.rows                  = data.rows || [{ id: 0, origin: { x: 0, z: 0 }, angle: 0, flipped: false }];
   Cabinet.cabinets              = data.cabinets;
+  // Inject preset accessories for cabinets that have none yet
+  Cabinet.cabinets.forEach(cab => CabinetBuilder.injectPresetAccessories?.(cab));
   Cabinet.activeRowIdx          = 0;
   Cabinet.editingIdx            = -1;
   Cabinet.descriptionCode       = '';
@@ -1300,6 +1302,7 @@ async function _applyConfig(data) {
   Cabinet.currentCabinetXOffset = 0;
 
   await CabinetBuilder.rebuildAllCabinetsFromState();
+  if (window.CabinetDrag)  await CabinetDrag.rebuildFromState();
   if (window.CabinetArrow) CabinetArrow.rebuildAll?.();
   if (window.CabinetFloor) CabinetFloor.update?.();
 
@@ -1372,14 +1375,30 @@ async function appendConfigToScene(path) {
 
     for (const cab of data.cabinets) {
       const newIdx = Cabinet.cabinets.length;  // index this cabinet will occupy
-      Cabinet.cabinets.push(Object.assign({}, cab, {
+      const entry = Object.assign({}, cab, {
         xOffset: baseOffset + (cab.xOffset ?? 0) - minX,
         rowIdx:  activeRow,
         label:  `ODF #${newIdx + 1}`,          // sequential across the whole row
-      }));
+      });
+      CabinetBuilder.injectPresetAccessories?.(entry);
+      Cabinet.cabinets.push(entry);
     }
 
+    // Clear existing meshes before full rebuild to avoid duplicates in scene.
+    // Also remove any orphaned placed-accessory / chassis meshes that were left
+    // behind when the preview scene swap emptied _lockedPlaced/_lockedChassis
+    // without being able to remove them from the main scene.
+    const _orphaned = Cabinet.scene.children.filter(
+      o => o.userData.isPlaced || o.userData.isPlacedChassis
+    );
+    _orphaned.forEach(o => Cabinet.scene.remove(o));
+
+    CabinetBuilder.clearAll({ noFade: true });
+    if (window.CabinetDrag)    CabinetDrag.clearAll();
+    if (window.CabinetChassis) CabinetChassis.clearAll();
+
     await CabinetBuilder.rebuildAllCabinetsFromState();
+    if (window.CabinetDrag)  await CabinetDrag.rebuildFromState();
     if (window.CabinetArrow) CabinetArrow.rebuildAll?.();
     if (window.CabinetFloor) CabinetFloor.update?.();
 
@@ -2318,7 +2337,7 @@ function _expandStep1() {
   });
 }
 
-function useEZRConfig() {
+async function useEZRConfig() {
   if (!Cabinet.isCodeValid) {
     showToast('Configure a valid cabinet code first', 'warn');
     return;
@@ -2331,6 +2350,8 @@ function useEZRConfig() {
   const accGrid = document.getElementById('accGrid');
   if (accGrid) accGrid.scrollLeft = 0;
   _renderAccThumbs();
+  // Inject and render preset accessories for EZR_OP designs
+  if (window.CabinetDrag) await CabinetDrag.applyPresetsIfEmpty();
 }
 
 const _presetThumbs  = {};  // code → dataURL cache
@@ -2476,6 +2497,23 @@ async function _capturePresetThumb(code, cam = {}) {
   await CabinetBuilder.build(code, { noFade: true }).catch(e => { window.showToast = origToast; throw e; });
   window.showToast = origToast;
 
+  // Temporarily inject preset accessories so they appear in the thumbnail
+  const _prevCabinets   = Cabinet.cabinets;
+  const _prevEditingIdx = Cabinet.editingIdx;
+  const _prevPlaced     = Cabinet.placedAccessories;
+  Cabinet.cabinets         = [{ code, xOffset: 0, rowIdx: 0, placedAccessories: [] }];
+  Cabinet.editingIdx       = 0;
+  Cabinet.placedAccessories = [];
+  if (window.CabinetDrag?.applyPresetsIfEmpty) await CabinetDrag.applyPresetsIfEmpty();
+  // Make preset accessories fully opaque for thumbnail
+  if (window.CabinetDrag) {
+    Cabinet.scene.traverse(obj => {
+      if (obj.userData.isPlaced && obj.isMesh) {
+        obj.material.opacity = 1; obj.material.transparent = false; obj.material.needsUpdate = true;
+      }
+    });
+  }
+
   // Ensure full opacity (safety net in case materials were partially transparent)
   const assembly = scene.getObjectByName('CabinetAssembly');
   if (assembly) {
@@ -2513,6 +2551,12 @@ async function _capturePresetThumb(code, cam = {}) {
   rdr.setSize(cssW, cssH, false);
   camera.aspect = prevAspect;
   camera.updateProjectionMatrix();
+
+  // Clean up temporary preset accessories and state
+  if (window.CabinetDrag) CabinetDrag.clear();
+  Cabinet.cabinets          = _prevCabinets;
+  Cabinet.editingIdx        = _prevEditingIdx;
+  Cabinet.placedAccessories = _prevPlaced;
 
   return dataURL;
 }

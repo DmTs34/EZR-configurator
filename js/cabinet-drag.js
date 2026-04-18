@@ -334,6 +334,12 @@ window.CabinetDrag = (function () {
     const cabinet = Cabinet.cabinets[cabinetIdx];
     if (!cabinet) return;
 
+    // Finalize any active editing before duplicating
+    if (Cabinet.editingIdx >= 0) {
+      if (window.onReadyClick) onReadyClick();
+      if (Cabinet.editingIdx >= 0) return; // finalization failed (invalid code / overlap)
+    }
+
     // Always place duplicate in the active row
     const targetRowIdx = Cabinet.activeRowIdx ?? 0;
 
@@ -403,6 +409,12 @@ window.CabinetDrag = (function () {
   function _cloneCabinet(cabinetIdx) {
     const cabinet = Cabinet.cabinets[cabinetIdx];
     if (!cabinet) return;
+
+    // Finalize any active editing before cloning
+    if (Cabinet.editingIdx >= 0) {
+      if (window.onReadyClick) onReadyClick();
+      if (Cabinet.editingIdx >= 0) return;
+    }
 
     // Ensure source has a cloneGroupId
     if (!cabinet.cloneGroupId) {
@@ -1124,7 +1136,10 @@ window.CabinetDrag = (function () {
     }, _camera);
 
     const meshes = [];
-    for (const p of _placed) p.mesh.traverse(c => { if (c.isMesh) meshes.push(c); });
+    for (const p of _placed) {
+      if (p.preset) continue; // preset accessories are non-interactive
+      p.mesh.traverse(c => { if (c.isMesh) meshes.push(c); });
+    }
     const hits = _raycaster.intersectObjects(meshes, false);
     if (!hits.length) return -1;
 
@@ -1225,6 +1240,7 @@ window.CabinetDrag = (function () {
     for (const p of entries) {
       p.mesh.traverse(c => {
         if (!c.isMesh) return;
+        if (p.preset) return; // preset accessories keep original material
         if (!c.userData.origMat) c.userData.origMat = c.material;
         c.material = new THREE.MeshStandardMaterial(
           { color: COLOR_PLACED, transparent: true, opacity: OPACITY_PLACED });
@@ -1232,8 +1248,49 @@ window.CabinetDrag = (function () {
       _placed.push(p);
     }
     Cabinet.placedAccessories = _placed.map(p => ({
-      code: p.accCode, snapId: p.snapId, parentSnapId: p.parentSnapId ?? null, parentType: p.parentType ?? null, rotated: p.rotated ?? false,
+      code: p.accCode, snapId: p.snapId, parentSnapId: p.parentSnapId ?? null,
+      parentType: p.parentType ?? null, rotated: p.rotated ?? false, preset: p.preset ?? false,
     }));
+  }
+
+  // Place preset accessories for the active cabinet if none have been placed yet.
+  // Preset accessories use original material and are non-interactive (preset: true).
+  // Called when entering step 2 so the user sees presets immediately.
+  async function applyPresetsIfEmpty() {
+    if (_placed.length > 0) return;
+    if (!window.CabinetBuilder?.injectPresetAccessories) return;
+    const editingIdx = Cabinet.editingIdx ?? -1;
+    if (editingIdx < 0) return;
+    const cab = Cabinet.cabinets[editingIdx];
+    if (!cab) return;
+
+    // Use a temp object to get the preset list without mutating cab
+    const tmp = { code: cab.code, placedAccessories: [] };
+    CabinetBuilder.injectPresetAccessories(tmp);
+    if (!tmp.placedAccessories.length) return;
+
+    const rowIdx = Cabinet.activeRowIdx ?? 0;
+    for (const entry of tmp.placedAccessories) {
+      const snaps = CabinetBuilder.getSnapPoints(cab.code, entry.code, cab.xOffset, rowIdx);
+      const snap  = snaps.find(s => s.id === entry.snapId);
+      if (!snap) continue;
+      try {
+        const mesh = await _loadGLB(entry.code);
+        // Keep original material — preset accessories are non-editable
+        mesh.traverse(c => { if (c.isMesh) c.userData.origMat = c.material; });
+        mesh.position.copy(snap.position);
+        _applyRotation(mesh, entry.code, false, rowIdx);
+        mesh.userData.isPlaced = true;
+        _scene.add(mesh);
+        _placed.push({ accCode: entry.code, snapId: entry.snapId, mesh, rotated: false,
+          parentSnapId: null, parentType: null, cabinetIdx: editingIdx, preset: true });
+        Cabinet.placedAccessories.push({ code: entry.code, snapId: entry.snapId,
+          parentSnapId: null, parentType: null, rotated: false, preset: true });
+      } catch (e) {
+        console.warn('[CabinetDrag] Could not place preset accessory:', entry.code, e.message);
+      }
+    }
+    if (window.CabinetUI) CabinetUI.rebuildBOM();
   }
 
   // Shift locked accessories for a single cabinet index by deltaMM along X.
@@ -1383,7 +1440,7 @@ window.CabinetDrag = (function () {
       mesh.userData.isPlaced = true;
       _scene.add(mesh);
       mesh.updateWorldMatrix(true, true);
-      _lockedPlaced.push({ accCode: entry.code, snapId: entry.snapId, mesh, rotated: entry.rotated ?? false, parentSnapId: entry.parentSnapId ?? null, parentType: entry.parentType ?? null, cabinetIdx });
+      _lockedPlaced.push({ accCode: entry.code, snapId: entry.snapId, mesh, rotated: entry.rotated ?? false, parentSnapId: entry.parentSnapId ?? null, parentType: entry.parentType ?? null, cabinetIdx, preset: entry.preset ?? false });
     }
 
     // Second pass: reposition acc-on-acc / acc-on-chassis entries.
@@ -1421,7 +1478,7 @@ window.CabinetDrag = (function () {
 
   function setScene(s) { _scene = s; }
 
-  return { init, setScene, clear, clearAll, finalizeCurrent, saveEditBack, loadForEdit, shiftLockedPlaced, rebuildAllAccessories, rebuildFromState, _isDragging: () => _dragging,
+  return { init, setScene, clear, clearAll, finalizeCurrent, saveEditBack, loadForEdit, applyPresetsIfEmpty, shiftLockedPlaced, rebuildAllAccessories, rebuildFromState, _isDragging: () => _dragging,
     _repositionChildrenOfChassis(chassisCode, oldSlotIdx, newSlotIdx, cabinetIdx) {
       // Called by CabinetChassis after moving a chassis — repositions attached accessories
       // and updates their parentSnapId to the new slotIdx so save/load stays correct.

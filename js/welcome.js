@@ -747,9 +747,6 @@
         CabinetBuilder.setHighlightsVisible(true);
       }
 
-      // Builder state is no longer needed — scene will be fully rebuilt
-      _savedBuilderState = null;
-
       if (file) {
         // Capture user's door settings before any load overwrites them
         var anEl = document.getElementById('doorAngle');
@@ -758,6 +755,12 @@
         var userOpacity = opEl ? opEl.value : null;
 
         if (hasExisting) {
+          // Restore builder state so _lockedAssemblies knows about the original main
+          // scene meshes — clearAll inside rebuildAllCabinetsFromState will remove them.
+          if (_savedBuilderState && window.CabinetBuilder && CabinetBuilder.restoreBuilderState) {
+            CabinetBuilder.restoreBuilderState(_savedBuilderState);
+          }
+          _savedBuilderState = null;
           // Append to existing row — restore saved state first so the
           // main scene reflects the original cabinets, then append.
           // appendConfigToScene already re-applies current UI door values internally.
@@ -766,6 +769,7 @@
         } else {
           // Scene is empty — discard saved state and do a full replace.
           // loadExample applies config's door values; we override them below.
+          _savedBuilderState = null;
           _savedCabinetState = null;
           if (typeof loadExample === 'function') await loadExample(file);
         }

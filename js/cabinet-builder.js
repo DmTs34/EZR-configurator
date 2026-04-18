@@ -178,6 +178,69 @@ window.CabinetBuilder = (function () {
 
 /** Valid attachment points for each accessory type.
       Maps component filename to array of valid point labels. */
+  /**
+   * Preset accessories auto-injected when a cabinet has no manually placed accessories.
+   * Keyed by DE code. Each entry targets the LEFT C-FRM only (frm0).
+   * Snap ID format matches _collectCFRM: `${de}-frm0-${label}`.
+   */
+  const _PRESET_ACCESSORIES = {
+    // Left C-FRM (frm0)
+    '09STL': [
+      { code: 'EZR_TBRKT', snapId: '09STL-frm0-C-FRM-1' },
+      { code: 'EZR_RET',   snapId: '09STL-frm0-C-FRM-2' },
+      { code: 'EZR_RET',   snapId: '09STL-frm0-C-FRM-3' },
+    ],
+    '06LR0': [
+      { code: 'EZR_TBRKT', snapId: '06LR0-frm0-C-FRM-1' },
+      { code: 'EZR_RET',   snapId: '06LR0-frm0-C-FRM-2' },
+      { code: 'EZR_RET',   snapId: '06LR0-frm0-C-FRM-3' },
+    ],
+    // Right C-FRM (frm1)
+    '09STR': [
+      { code: 'EZR_TBRKT', snapId: '09STR-frm1-C-FRM-1' },
+      { code: 'EZR_RET',   snapId: '09STR-frm1-C-FRM-2' },
+      { code: 'EZR_RET',   snapId: '09STR-frm1-C-FRM-3' },
+    ],
+    '09DAR': [
+      { code: 'EZR_TBRKT', snapId: '09DAR-frm1-C-FRM-1' },
+      { code: 'EZR_RET',   snapId: '09DAR-frm1-C-FRM-2' },
+      { code: 'EZR_RET',   snapId: '09DAR-frm1-C-FRM-3' },
+    ],
+    // 15DAS = 06LR0 (left) + 09DAR (right) — snap IDs use those same prefixes
+    '15DAS': [
+      { code: 'EZR_TBRKT', snapId: '06LR0-frm0-C-FRM-1' },
+      { code: 'EZR_RET',   snapId: '06LR0-frm0-C-FRM-2' },
+      { code: 'EZR_RET',   snapId: '06LR0-frm0-C-FRM-3' },
+      { code: 'EZR_TBRKT', snapId: '09DAR-frm1-C-FRM-1' },
+      { code: 'EZR_RET',   snapId: '09DAR-frm1-C-FRM-2' },
+      { code: 'EZR_RET',   snapId: '09DAR-frm1-C-FRM-3' },
+    ],
+  };
+
+  /**
+   * Fills cab.placedAccessories with preset accessories for its DE code,
+   * but ONLY when placedAccessories is empty (not already customised by the user).
+   * Idempotent — safe to call multiple times.
+   *
+   * @param {object} cab  — entry from Cabinet.cabinets[]
+   */
+  function injectPresetAccessories(cab) {
+    if (!cab) return;
+    if (cab.placedAccessories && cab.placedAccessories.length > 0) return;
+    const p = _parse(cab.code);
+    if (!p) return;
+    if (p.pr !== 'EZR_OP') return;
+    const presets = _PRESET_ACCESSORIES[p.de];
+    if (!presets || !presets.length) return;
+    cab.placedAccessories = presets.map(pr => ({
+      code:         pr.code,
+      snapId:       pr.snapId,
+      parentSnapId: null,
+      parentType:   null,
+      rotated:      false,
+    }));
+  }
+
   const _ACC_SNAP_PTS = {
     'EZR_MDL-L87-NT':        ['A2','A3','A4','A5','A6','B2','B3','B4','B5','B6','C2','C3','C4','C5','C6'],
     'EZR_MDL-L224-NT':       ['A2','A3','A4','A5','A6','B2','B3','B4','B5','B6','C2','C3','C4','C5','C6'],
@@ -2143,6 +2206,7 @@ window.CabinetBuilder = (function () {
     clearLockedHighlights,
     saveBuilderState,
     restoreBuilderState,
+    injectPresetAccessories,
     updateLabel,
     updateLabelOverlays,
     getSnapPoints,

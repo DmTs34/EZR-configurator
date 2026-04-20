@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EZR Cabinet Configurator</title>
+  <title>Data Center Grey Space Structured Cabling Designer</title>
   <link rel="stylesheet" href="css/cabinet/base.css">
   <link rel="stylesheet" href="css/cabinet/layout.css">
   <link rel="stylesheet" href="css/cabinet/components.css">
@@ -30,12 +30,12 @@
   <!-- Cards phase (shown after scene is ready) -->
   <div id="welcomeCards">
     <div class="welcome-intro-content">
-      <div class="welcome-intro-logo">EZR <span style="font-weight:300;opacity:0.6">— Each Zone Rack</span></div>
+      <img class="welcome-intro-logo-img" src="images/HS_Logo_blue_RGB.png" alt="Huber+Suhner">
+      <div class="welcome-intro-title">Data Center Grey Space Structured Cabling Designer</div>
       <div class="welcome-intro-subtitle">Choose how you want to work today</div>
       <div class="welcome-intro-cards">
 
         <div class="welcome-card" onclick="selectWelcomeMode('presets')">
-          <div class="welcome-card-level">Basic</div>
           <div class="welcome-card-icon">📦</div>
           <div class="welcome-card-title">Ready configurations</div>
           <div class="welcome-card-desc">
@@ -45,11 +45,10 @@
         </div>
 
         <div class="welcome-card" onclick="selectWelcomeMode('custom')">
-          <div class="welcome-card-level">Advanced</div>
           <div class="welcome-card-icon">⚙️</div>
           <div class="welcome-card-title">Configure your ODF</div>
           <div class="welcome-card-desc">
-            Build your own EZR cabinet from scratch using the step-by-step configurator.
+            Build your own EZR cabinet from scratch using the step-by-step designer.
           </div>
           <div class="welcome-card-badge">Custom configuration</div>
         </div>
@@ -121,8 +120,7 @@
 ════════════════════════════════════════════════════ -->
 <header class="app-header">
   <div class="logo">
-    <span class="logo-text">EZR Configurator</span>
-    <span class="version-tag">Cabinet v1.0</span>
+    <span class="logo-text">DC Grey Space Designer</span>
   </div>
   <div class="header-spacer"></div>
   <input type="text" class="project-name-input" id="projectName"
@@ -545,9 +543,15 @@
 <script src="js/cabinet-state.js"></script>
 <script src="js/cabinet-utils.js"></script>
 <script src="js/cabinet-main.js"></script>
+<script src="js/cabinet-assembly-config.js"></script>
 <script src="js/cabinet-builder.js"></script>
 <script src="js/cabinet-floor.js"></script>
 <script src="js/preview-cables.js"></script>
+<script src="js/cabinet-code.js"></script>
+<script src="js/cabinet-code-editor.js"></script>
+<script src="js/cabinet-config.js"></script>
+<script src="js/cabinet-presets.js"></script>
+<script src="js/cabinet-cables.js"></script>
 <script src="js/cabinet-ui.js"></script>
 <script src="js/cabinet-drag.js"></script>
 <script src="js/cabinet-chassis.js"></script>

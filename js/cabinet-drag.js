@@ -330,7 +330,7 @@ window.CabinetDrag = (function () {
     _ctxMenu = menu;
   }
 
-  function _duplicateCabinet(cabinetIdx) {
+  async function _duplicateCabinet(cabinetIdx) {
     const cabinet = Cabinet.cabinets[cabinetIdx];
     if (!cabinet) return;
 
@@ -393,8 +393,14 @@ window.CabinetDrag = (function () {
 
     // Rebuild the scene to include the new cabinet
     if (window.CabinetBuilder && window.CabinetBuilder.rebuildAllCabinetsFromState) {
-      CabinetBuilder.rebuildAllCabinetsFromState();
+      await CabinetBuilder.rebuildAllCabinetsFromState();
     }
+
+    // Re-apply door settings (rebuild resets all door meshes to defaults)
+    const _anEl = document.getElementById('doorAngle');
+    const _opEl = document.getElementById('doorOpacity');
+    if (_anEl && typeof applyDoorAngle   === 'function') applyDoorAngle(_anEl.value);
+    if (_opEl && typeof applyDoorOpacity === 'function') applyDoorOpacity(_opEl.value);
 
     if (window.CabinetUI && window.CabinetUI.updateCabinetList) {
       CabinetUI.updateCabinetList();
@@ -406,7 +412,7 @@ window.CabinetDrag = (function () {
     }
   }
 
-  function _cloneCabinet(cabinetIdx) {
+  async function _cloneCabinet(cabinetIdx) {
     const cabinet = Cabinet.cabinets[cabinetIdx];
     if (!cabinet) return;
 
@@ -467,7 +473,14 @@ window.CabinetDrag = (function () {
         return p ? Math.max(max, c.xOffset + p.widthMM) : max;
       }, 0);
 
-    if (window.CabinetBuilder?.rebuildAllCabinetsFromState) CabinetBuilder.rebuildAllCabinetsFromState();
+    if (window.CabinetBuilder?.rebuildAllCabinetsFromState) await CabinetBuilder.rebuildAllCabinetsFromState();
+
+    // Re-apply door settings (rebuild resets all door meshes to defaults)
+    const _anEl = document.getElementById('doorAngle');
+    const _opEl = document.getElementById('doorOpacity');
+    if (_anEl && typeof applyDoorAngle   === 'function') applyDoorAngle(_anEl.value);
+    if (_opEl && typeof applyDoorOpacity === 'function') applyDoorOpacity(_opEl.value);
+
     if (window.CabinetUI?.updateCabinetList)               CabinetUI.updateCabinetList();
     if (window.CabinetFloor?.update)                       CabinetFloor.update();
   }

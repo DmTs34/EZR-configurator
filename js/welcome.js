@@ -583,9 +583,14 @@
 
       // Load config — cabinets + chassis + accessories all go into _scene
       var origToast = window.showToast;
-      window.showToast = function () {};
+      window.showToast = function (msg, type) {
+        if (type === 'error') console.error('[ConfigPreview] loadExample error:', msg);
+      };
       try {
         if (typeof loadExample === 'function') await loadExample(cfg.file);
+        else console.error('[ConfigPreview] loadExample is not defined');
+      } catch (err) {
+        console.error('[ConfigPreview] Unexpected error:', err);
       } finally {
         window.showToast = origToast;
       }

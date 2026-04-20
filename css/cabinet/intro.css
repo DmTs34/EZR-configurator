@@ -119,85 +119,86 @@
 .welcome-intro-content {
   text-align: center;
   color: #fff;
+  padding: 40px 20px;
 }
 
-.welcome-intro-logo {
-  font-size: 2.2rem;
+.welcome-intro-logo-img {
+  height: 36px;
+  width: auto;
+  margin-bottom: 20px;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  filter: brightness(0) invert(1);
+  opacity: 0.9;
+}
+
+.welcome-intro-title {
+  font-size: 28px;
   font-weight: 700;
-  letter-spacing: 0.05em;
   margin-bottom: 6px;
+  line-height: 1.25;
 }
 
 .welcome-intro-subtitle {
-  font-size: 0.95rem;
-  color: rgba(255, 255, 255, 0.55);
-  margin-bottom: 44px;
+  font-size: 14px;
+  opacity: 0.75;
+  margin-bottom: 40px;
 }
 
 .welcome-intro-cards {
   display: flex;
   gap: 24px;
   justify-content: center;
+  flex-wrap: wrap;
 }
 
 .welcome-card {
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 12px;
-  padding: 34px 28px 28px;
-  width: 230px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #2c3e50;
+  border-radius: 10px;
+  padding: 32px 28px;
+  width: 220px;
   cursor: pointer;
-  transition: background 0.2s, border-color 0.2s, transform 0.15s;
-  backdrop-filter: blur(8px);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
   text-align: center;
   user-select: none;
 }
 
 .welcome-card:hover {
-  background: rgba(255, 255, 255, 0.13);
-  border-color: rgba(74, 168, 216, 0.6);
   transform: translateY(-4px);
-}
-
-.welcome-card-level {
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: rgba(255, 255, 255, 0.35);
-  margin-bottom: 14px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  background: #fff;
 }
 
 .welcome-card-icon {
-  font-size: 2.2rem;
+  font-size: 36px;
   margin-bottom: 14px;
 }
 
 .welcome-card-title {
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: #fff;
-  margin-bottom: 10px;
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: #2c3e50;
 }
 
 .welcome-card-desc {
-  font-size: 0.82rem;
-  color: rgba(255, 255, 255, 0.55);
-  line-height: 1.55;
+  font-size: 12px;
+  color: #666;
+  line-height: 1.5;
 }
 
 .welcome-card-badge {
   display: inline-block;
-  margin-top: 18px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #4aa8d8;
-  background: rgba(74, 168, 216, 0.12);
-  border: 1px solid rgba(74, 168, 216, 0.28);
+  margin-top: 14px;
+  background: #65b8a5;
+  color: #fff;
+  font-size: 11px;
+  padding: 3px 10px;
   border-radius: 20px;
-  padding: 3px 12px;
+  font-weight: 600;
 }
 
 
